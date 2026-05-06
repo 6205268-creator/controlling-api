@@ -1,0 +1,166 @@
+erDiagram
+  organizations ||--o{ contractors : "владеет"
+  organizations ||--o{ members : "имеет"
+  organizations ||--o{ plots : "содержит"
+  organizations ||--o{ meters : "содержит"
+  organizations ||--o{ contribution_types : "определяет"
+  organizations ||--o{ tariffs : "устанавливает"
+  organizations ||--|| period_locks : "закрывает период"
+  organizations ||--o{ documents : "создаёт"
+
+  contractors ||--o{ members : "является членом"
+  contractors ||--o{ plots : "владеет"
+  contractors ||--o{ meters : "владеет"
+
+  plots ||--o{ meters : "имеет"
+
+  contribution_types ||--o{ tariffs : "тарифицируется"
+
+  documents ||--o| doc_payment : "детали платежа"
+  documents ||--o| doc_distribution : "детали распределения"
+  documents ||--o| doc_meter_reading : "детали показаний"
+  documents ||--o| doc_meter_charge : "детали начисления"
+  documents ||--o| doc_period_close : "детали закрытия"
+  documents ||--o| doc_meter_correction : "детали корректировки"
+  documents ||--o{ documents : "parent (цепочка)"
+
+  doc_distribution ||--o{ doc_distribution_lines : "строки"
+
+  meters ||--o{ meter_readings : "имеет показания"
+  meters ||--o{ doc_meter_reading : "снятие показаний"
+  meters ||--o{ doc_meter_charge : "начисление"
+  meters ||--o{ doc_meter_correction : "корректировка"
+
+  documents ||--o{ debt_movements : "порождает движения долга"
+  documents ||--o{ account_movements : "порождает движения счёта"
+  contractors ||--o{ account_movements : "лицевой счёт"
+
+  organizations {
+    uuid id PK
+    text name
+    text org_type "gardening | garage"
+    bool is_active
+  }
+  contractors {
+    uuid id PK
+    uuid organization_id FK
+    text full_name
+    text phone
+  }
+  members {
+    uuid id PK
+    uuid organization_id FK
+    uuid contractor_id FK
+    text member_number
+    bool is_active
+  }
+  plots {
+    uuid id PK
+    uuid organization_id FK
+    text number
+    numeric area
+    uuid owner_id FK
+    bool is_active
+  }
+  meters {
+    uuid id PK
+    uuid organization_id FK
+    uuid plot_id FK
+    text meter_type
+    text serial_number
+    bool is_active
+  }
+  contribution_types {
+    uuid id PK
+    uuid organization_id FK
+    text name
+    text kind "membership|target|meter"
+  }
+  tariffs {
+    uuid id PK
+    uuid organization_id FK
+    uuid contribution_type_id FK
+    date valid_from
+    numeric rate
+  }
+  period_locks {
+    uuid id PK
+    uuid organization_id FK
+    date locked_until
+  }
+  documents {
+    uuid id PK
+    uuid organization_id FK
+    text doc_type
+    date doc_date
+    text status "draft|posted|cancelled"
+    uuid parent_id FK
+  }
+  doc_payment {
+    uuid document_id PK
+    uuid contractor_id FK
+    numeric amount
+  }
+  doc_distribution {
+    uuid document_id PK
+    uuid contractor_id FK
+  }
+  doc_distribution_lines {
+    uuid id PK
+    uuid document_id FK
+    text object_type
+    uuid object_id
+    uuid contribution_type_id FK
+    numeric amount
+  }
+  doc_meter_reading {
+    uuid document_id PK
+    uuid meter_id FK
+    numeric reading_value
+  }
+  doc_meter_charge {
+    uuid document_id PK
+    uuid meter_id FK
+    numeric consumption
+    numeric tariff_rate
+    numeric amount
+  }
+  doc_period_close {
+    uuid document_id PK
+    date closing_period
+  }
+  doc_meter_correction {
+    uuid document_id PK
+    uuid meter_id FK
+    date correction_period
+    numeric old_reading
+    numeric new_reading
+    text reason
+  }
+  meter_readings {
+    uuid id PK
+    uuid meter_id FK
+    date period
+    numeric reading
+    uuid document_id FK
+  }
+  debt_movements {
+    uuid id PK
+    uuid organization_id FK
+    uuid document_id FK
+    text object_type
+    uuid object_id
+    uuid contribution_type_id FK
+    numeric amount
+    date period
+    bool is_reversal
+  }
+  account_movements {
+    uuid id PK
+    uuid organization_id FK
+    uuid document_id FK
+    uuid contractor_id FK
+    numeric amount
+    date period
+    bool is_reversal
+  }
