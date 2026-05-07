@@ -1,0 +1,4 @@
+.env
+docker/nginx/ssl/
+kontrolling/node_modules/
+pg-credentials.txt
