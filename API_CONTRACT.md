@@ -3,8 +3,67 @@
 **Backend**: PostgreSQL 16 + PostgREST 14  
 **Base URL**: `http://103.35.190.117/pg` (через Nginx) или `http://103.35.190.117:3100` (напрямую)  
 **Content-Type**: `application/json`  
-**Auth**: пока без аутентификации (TODO: `Authorization: Bearer <JWT>`)  
+**Auth**: `Authorization: Bearer <JWT>` — обязателен для всех endpoints кроме `/rpc/login` и enum-справочников  
 **Валюта**: только BYN (Decimal с 2 знаками)
+
+---
+
+## Авторизация
+
+### Получить токен
+```
+POST /pg/rpc/login
+```
+**Тело:**
+```json
+{"p_login": "admin", "p_password": "admin123"}
+```
+**Ответ:**
+```json
+{
+  "token": "eyJhbGci...",
+  "expires_at": "2026-05-07T21:00:00Z",
+  "user_id": "uuid",
+  "organization_id": "uuid",
+  "user_role": "admin"
+}
+```
+
+**Использование токена** — во всех последующих запросах:
+```
+Authorization: Bearer eyJhbGci...
+```
+
+**Токен живёт 8 часов.** После истечения повторить логин.
+
+### Кто я
+```
+POST /pg/rpc/me
+Authorization: Bearer <token>
+```
+Возвращает: `user_id`, `login`, `full_name`, `role`, `organization_id`.
+
+### Создать пользователя (только admin)
+```
+POST /pg/rpc/create_user
+Authorization: Bearer <token>
+```
+```json
+{
+  "p_login": "treasurer1",
+  "p_password": "pass123",
+  "p_full_name": "Петров Иван",
+  "p_role": "treasurer"
+}
+```
+Роли: `admin`, `treasurer`, `board`, `member`.  
+Пользователь создаётся в организации того, кто создаёт (другую организацию задать нельзя).
+
+### Изоляция данных
+
+Каждый пользователь привязан к одной организации. PostgreSQL RLS (Row Level Security) гарантирует: **любой запрос автоматически фильтруется по `organization_id` из токена**. Увидеть данные другой организации невозможно даже при ошибке фронтенда.
+
+Без токена все защищённые endpoints возвращают `42501 permission denied`.
 
 ---
 
