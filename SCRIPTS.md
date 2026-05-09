@@ -11,6 +11,7 @@
 
 | Скрипт | Расположение | Назначение | Автозапуск |
 |--------|-------------|-----------|-----------|
+| `controlling-bot.py` | `/home/roman/bin/controlling-bot.py` | Telegram-бот с командами /status /backup /help | ✅ systemd (автозапуск при старте сервера) |
 | `tg-send` | `/home/roman/bin/tg-send` | Отправить файл в Telegram-бот | ❌ Вручную |
 | `tg-msg` | `/home/roman/bin/tg-msg` | Отправить текстовое сообщение в Telegram | ❌ Вручную |
 | `pg-backup.sh` | `/home/roman/bin/pg-backup.sh` | Резервная копия БД controlling → `/home/roman/backups/` | ✅ Cron 02:00 ежедневно |
