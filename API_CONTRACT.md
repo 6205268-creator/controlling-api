@@ -1,7 +1,7 @@
 # CONTROLLING — API Contract v1.0
 
 **Backend**: PostgreSQL 16 + PostgREST 14  
-**Base URL**: `http://103.35.190.117/pg` (через Nginx) или `http://103.35.190.117:3100` (напрямую)  
+**Base URL**: `http://brachiumartur.com/pg` (через Nginx) или `http://brachiumartur.com:3100` (напрямую)  
 **Content-Type**: `application/json`  
 **Auth**: `Authorization: Bearer <JWT>` — обязателен для всех endpoints кроме `/rpc/login` и enum-справочников  
 **Валюта**: только BYN (Decimal с 2 знаками)
