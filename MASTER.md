@@ -140,7 +140,7 @@ git push github main
 
 ## Миграции БД
 
-Все применены: **001–008**
+Все применены: **001–009**
 
 | № | Что |
 |---|-----|
@@ -152,6 +152,7 @@ git push github main
 | 006 | Отчётные представления (views) |
 | 007 | Тестовые данные (демо-организации) |
 | 008 | Роли: удалены board/member/background, оставлены admin/treasurer/superadmin |
+| 009 | RPC-хелперы: create_meter_reading + create_meter_charge |
 
 **Применить новую миграцию:**
 ```bash
@@ -179,8 +180,8 @@ cat /home/roman/dev-context/sql/00N-name.sql | sudo -u postgres psql -d controll
 
 Приоритетный порядок:
 
-- [ ] `create_meter_reading` — RPC хелпер (фронтенд делает 2 сырых INSERT, нужен 1 вызов)
-- [ ] `create_meter_charge` — то же для начисления по счётчику
+- [x] `create_meter_reading` — готово (миграция 009)
+- [x] `create_meter_charge` — готово (миграция 009)
 - [ ] `change_password` — endpoint смены пароля
 - [ ] Logout / инвалидация токена
 - [ ] Удалить тест-пользователя `admin/admin123` перед продакшном
