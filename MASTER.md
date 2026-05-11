@@ -37,7 +37,8 @@
 
 ## API для фронтенда
 
-**Base URL:** `http://brachiumartur.com/pg`
+**Base URL:** `http://103.35.190.117/pg`
+> ⚠️ Домен `brachiumartur.com` не в публичном DNS. Использовать только IP.
 
 ```
 # Авторизация
@@ -51,7 +52,7 @@ Authorization: Bearer <token>
 
 **Frontend .env:**
 ```
-VITE_API_BASE_URL=http://brachiumartur.com/pg
+VITE_API_BASE_URL=http://103.35.190.117/pg
 ```
 
 Полный API: см. `API_CONTRACT.md` в этой же папке.
