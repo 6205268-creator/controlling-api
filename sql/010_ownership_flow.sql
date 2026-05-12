@@ -70,6 +70,11 @@ ALTER TABLE private.financial_object_registry
     ADD CONSTRAINT financial_object_registry_contractor_id_fkey
         FOREIGN KEY (contractor_id) REFERENCES private.contractors(id);
 
+-- Prevent two open records for the same object (valid_to IS NULL = current owner)
+CREATE UNIQUE INDEX IF NOT EXISTS fin_obj_reg_active_unique
+    ON private.financial_object_registry (organization_id, object_type, object_id)
+    WHERE valid_to IS NULL;
+
 -- ---------------------------------------------------------------------------
 -- 4. Drop plot_ownerships (replaced by financial_object_registry)
 -- ---------------------------------------------------------------------------
