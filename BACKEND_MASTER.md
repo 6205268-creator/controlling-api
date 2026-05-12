@@ -1,7 +1,7 @@
 # CONTROLLING — BACKEND MASTER DOCUMENT
 
 > **Это главный документ БЭКЕНДА.** Любая новая сессия (Claude или человек) начинает отсюда.  
-> Последнее обновление: 2026-05-11
+> Последнее обновление: 2026-05-12
 >
 > **Фронтенд** — отдельный проект: `/home/roman/controlling-frontend/FRONTEND_MASTER.md`  
 > **Не смешивать бэкенд и фронтенд!**
@@ -143,7 +143,7 @@ git push github main
 
 ## Миграции БД
 
-Все применены: **001–009**
+Все применены: **001–010**. Управление через **Alembic** (установлен 2026-05-12).
 
 | № | Что |
 |---|-----|
@@ -156,12 +156,28 @@ git push github main
 | 007 | Тестовые данные (демо-организации) |
 | 008 | Роли: удалены board/member/background, оставлены admin/treasurer/superadmin |
 | 009 | RPC-хелперы: create_meter_reading + create_meter_charge |
+| 010 | Право владения участком: doc_ownership, periodic registry, contractor_type, members.source_doc_id |
 
-**Применить новую миграцию:**
+### Alembic — инструмент миграций
+
 ```bash
-cat /home/roman/controlling-backend/sql/00N-name.sql | sudo -u postgres psql -d controlling
+cd /home/roman/controlling-backend
+
+# Текущая версия
+.venv/bin/alembic current
+
+# Создать новую миграцию
+.venv/bin/alembic revision -m "описание"
+# → редактируй upgrade() и downgrade() в migrations/versions/
+
+# Применить
+.venv/bin/alembic upgrade head
 ```
-*(Сначала показать пользователю, дождаться «применяй»)*
+
+- venv: `/home/roman/controlling-backend/.venv/`
+- Ревизии: `migrations/versions/`
+- Таблица версий: `public.alembic_version` (не в `api` — не торчит через PostgREST)
+- Baseline ревизия: `51549866f9f4` (покрывает 001–010)
 
 ---
 
