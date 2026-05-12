@@ -4,3 +4,6 @@ kontrolling/node_modules/
 pg-credentials.txt
 archive/
 controlling-session-transcript.md
+.venv/
+__pycache__/
+*.pyc
