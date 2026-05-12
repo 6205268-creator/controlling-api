@@ -23,7 +23,7 @@
 - [ ] Logout / инвалидация токена (сейчас токен живёт 8 часов и не отзывается)
 
 ### 3. Документация (не блокирует фронтенд)
-- [ ] Перенести `API_CONTRACT.md`, `DEPLOY.md`, `README.md` в репо (сейчас они в /home/roman/dev-context/)
+- [ ] Перенести `API_CONTRACT.md`, `DEPLOY.md`, `README.md` в репо (сейчас они в /home/roman/controlling-backend/)
 - [ ] Актуализировать README.md репо
 
 ---
@@ -38,7 +38,7 @@
 
 ## Архив
 
-Устаревшие документы перемещены в `/home/roman/dev-context/archive/`:
+Устаревшие документы перемещены в `/home/roman/controlling-backend/archive/`:
 - `project-design.md` — старый дизайн на FastAPI + Vue 3
 - `CONTROLLING_1C_BACKEND_FULL.md` — документация 1С-бэкенда (не реализован)
 - `controlling-plan.md` — план реализации на 1С

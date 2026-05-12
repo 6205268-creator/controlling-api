@@ -71,4 +71,4 @@ sudo -u postgres psql -d controlling -f sql/005_fixes_and_create_distribution.sq
 
 ## Credentials
 
-Лежат на сервере: `/home/roman/dev-context/pg-credentials.txt`
+Лежат на сервере: `/home/roman/controlling-backend/pg-credentials.txt`

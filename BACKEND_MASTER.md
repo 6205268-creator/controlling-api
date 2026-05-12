@@ -65,13 +65,13 @@ VITE_API_BASE_URL=http://103.35.190.117/pg
 
 | Что | Где |
 |-----|-----|
-| **Git-репо (источник правды)** | `/home/roman/dev-context/` |
-| API контракт | `/home/roman/dev-context/API_CONTRACT.md` |
-| SQL миграции | `/home/roman/dev-context/sql/` |
-| Docker setup | `/home/roman/dev-context/docker-compose.yml` |
-| Deploy-инструкция | `/home/roman/dev-context/DEPLOY.md` |
-| Список задач | `/home/roman/dev-context/TODO.md` |
-| Реестр скриптов | `/home/roman/dev-context/SCRIPTS.md` |
+| **Git-репо (источник правды)** | `/home/roman/controlling-backend/` |
+| API контракт | `/home/roman/controlling-backend/API_CONTRACT.md` |
+| SQL миграции | `/home/roman/controlling-backend/sql/` |
+| Docker setup | `/home/roman/controlling-backend/docker-compose.yml` |
+| Deploy-инструкция | `/home/roman/controlling-backend/DEPLOY.md` |
+| Список задач | `/home/roman/controlling-backend/TODO.md` |
+| Реестр скриптов | `/home/roman/controlling-backend/SCRIPTS.md` |
 | **Скрипты** | `/home/roman/bin/` |
 | Telegram-бот | `/home/roman/bin/controlling-bot.py` |
 | Бэкап-скрипт | `/home/roman/bin/pg-backup.sh` |
@@ -79,7 +79,7 @@ VITE_API_BASE_URL=http://103.35.190.117/pg
 | Состояние последнего бэкапа | `/home/roman/backups/last-backup.json` |
 | **Дашборд разработки** | `/home/roman/dashboard/` |
 | Шаблоны HTML | `/home/roman/dashboard/templates/` |
-| Креденшлы | `/home/roman/dev-context/pg-credentials.txt` |
+| Креденшлы | `/home/roman/controlling-backend/pg-credentials.txt` |
 
 > `dashboard/` — только инструмент разработки, не часть продукта.
 
@@ -109,7 +109,7 @@ curl http://localhost:3100/rpc/health
 **Remote:** `github` (с токеном в URL, см. `git remote -v`)
 
 ```bash
-cd /home/roman/dev-context
+cd /home/roman/controlling-backend
 git status
 git push github main
 ```
@@ -159,7 +159,7 @@ git push github main
 
 **Применить новую миграцию:**
 ```bash
-cat /home/roman/dev-context/sql/00N-name.sql | sudo -u postgres psql -d controlling
+cat /home/roman/controlling-backend/sql/00N-name.sql | sudo -u postgres psql -d controlling
 ```
 *(Сначала показать пользователю, дождаться «применяй»)*
 
