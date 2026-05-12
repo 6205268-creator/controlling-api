@@ -1,0 +1,12 @@
+{"type":"server-started","port":55691,"host":"0.0.0.0","url_host":"103.35.190.117","url":"http://103.35.190.117:55691","screen_dir":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/content","state_dir":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/state"}
+{"type":"screen-added","file":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/content/mvp-screens.html"}
+{"source":"user-event","type":"click","text":"2\n    \n      Главная (дашборд)\n      Сводка: общий долг по организации, последние платежи, счётчики. Быстрый обзор.","choice":"dashboard","id":null,"timestamp":1778523093255}
+{"source":"user-event","type":"click","text":"1\n    \n      Вход (логин)\n      Страница авторизации. Обязательна.","choice":"login","id":null,"timestamp":1778523096294}
+{"source":"user-event","type":"click","text":"5\n    \n      Члены кооператива\n      Список физлиц: ФИО, телефон, активность, баланс лицевого счёта.","choice":"members","id":null,"timestamp":1778523099986}
+{"source":"user-event","type":"click","text":"3\n    \n      Участки + долги\n      Таблица: номер участка, владелец, телефон, долг. Основной рабочий список казначея.","choice":"plots","id":null,"timestamp":1778523108818}
+{"type":"screen-added","file":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/content/navigation-layout.html"}
+{"type":"screen-added","file":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/content/color-scheme.html"}
+{"type":"screen-added","file":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/content/waiting-1.html"}
+{"type":"screen-added","file":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/content/full-layout.html"}
+{"type":"screen-added","file":"/home/roman/dev-context/.superpowers/brainstorm/1438825-1778523040/content/full-layout-v2.html"}
+{"type":"server-stopped","reason":"idle timeout"}

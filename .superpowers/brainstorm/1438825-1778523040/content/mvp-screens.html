@@ -1,0 +1,59 @@
+<h2>Какой минимум нужен казначею?</h2>
+<p class="subtitle">Выбери экраны для MVP — всё остальное потом</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="login" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>Вход (логин)</h3>
+      <p>Страница авторизации. Обязательна.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="dashboard" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>Главная (дашборд)</h3>
+      <p>Сводка: общий долг по организации, последние платежи, счётчики. Быстрый обзор.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="plots" onclick="toggleSelect(this)">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3>Участки + долги</h3>
+      <p>Таблица: номер участка, владелец, телефон, долг. Основной рабочий список казначея.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="payment" onclick="toggleSelect(this)">
+    <div class="letter">4</div>
+    <div class="content">
+      <h3>Принять платёж</h3>
+      <p>Форма: выбрать члена, сумма, дата, ЕРИП-референс. Провести кнопкой.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="members" onclick="toggleSelect(this)">
+    <div class="letter">5</div>
+    <div class="content">
+      <h3>Члены кооператива</h3>
+      <p>Список физлиц: ФИО, телефон, активность, баланс лицевого счёта.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="debtors" onclick="toggleSelect(this)">
+    <div class="letter">6</div>
+    <div class="content">
+      <h3>Должники</h3>
+      <p>Только те, у кого долг > 0. Сортировка по сумме. Для работы с задолженностями.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="docs" onclick="toggleSelect(this)">
+    <div class="letter">7</div>
+    <div class="content">
+      <h3>Журнал документов</h3>
+      <p>История всех операций: платежи, начисления, сторно. Фильтр по типу и дате.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;padding:16px;background:#f8f9fa;border-radius:8px;">
+  <p class="label">Совет</p>
+  <p>Для старта достаточно: <strong>Вход → Участки+долги → Принять платёж</strong>. Остальное добавим потом. Выбери что важно для первого запуска.</p>
+</div>
