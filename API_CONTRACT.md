@@ -159,6 +159,14 @@ Authorization: Bearer <superadmin_token>
 | `CONTRACTOR_NOT_FOUND` | Контрагент не принадлежит организации |
 | `INVALID_OBJECT_TYPE` | Неверный тип объекта (допустимо: plot/member/meter) |
 | `INVALID_ROLE` | Недопустимая роль пользователя (допустимо: admin, treasurer) |
+| `ORG_MISMATCH` | Переданный `organization_id` / `p_org_id` не совпадает с организацией JWT (для пользователей с привязкой к оргу; у `superadmin` контекста орга нет — проверка не срабатывает) |
+| `DOC_NOT_FOUND` | Строка `doc_ownership` или указанный идентификатор документа не найдены |
+| `MISSING_DOCUMENT_LINK` | У строки владения не заполнен `document_id` (связь с журналом `documents`) |
+| `JOURNAL_NOT_FOUND` | Нет шапки журнала для строки владения |
+| `JOURNAL_MISMATCH` | Связанный документ не типа `ownership` или принадлежит другой организации |
+| `ALREADY_POSTED` | Документ владения уже проведён |
+| `NOT_POSTED` | Операция допустима только для проведённого документа владения |
+| `MISSING_POSTED_AT` | У документа в журнале отсутствует `posted_at` (несогласованное состояние) |
 
 ---
 
@@ -188,6 +196,8 @@ Authorization: Bearer <superadmin_token>
   "is_active": true
 }]
 ```
+
+В представлении `api.organizations` поле **`actuality_moment`** (оперативная дата актуальности проведения по организации, миграция 012) **не выдаётся** — значение хранится в БД и обновляется при проведении/отмене документов владения на стороне сервера до появления отдельной выдачи через API/view.
 
 ### GET /contractors?organization_id=eq.<uuid>
 Список контрагентов (физлица-плательщики).
@@ -233,6 +243,8 @@ Authorization: Bearer <superadmin_token>
   "is_active": true
 }]
 ```
+
+Для отображения текущего владельца в интерфейсах после миграции **012** ориентируйтесь на **`GET /plot_summary`**, а не на `plots.owner_id` (реестр владения живёт в проведённых документах типа **`ownership`**).
 
 ### GET /meters?organization_id=eq.<uuid>
 Счётчики (вода, электричество).
@@ -285,8 +297,11 @@ Authorization: Bearer <superadmin_token>
 ### GET /documents?organization_id=eq.<uuid>
 Журнал документов (сырой, без деталей).
 
+Допустимые значения **`doc_type`** (в том числе для фильтра): `payment`, `distribution`, `meter_reading`, `meter_charge`, `period_close`, `meter_correction`, `accrual`, **`ownership`**.
+
 **Filters useful:**
 - `?doc_type=eq.payment`
+- `?doc_type=eq.ownership`
 - `?status=eq.posted`
 - `?doc_date=gte.2025-01-01`
 
@@ -298,7 +313,7 @@ Authorization: Bearer <superadmin_token>
 [{
   "id": "uuid",
   "organization_id": "uuid",
-  "doc_type": "payment",        // payment | accrual | distribution | meter_reading | meter_charge | period_close | meter_correction
+  "doc_type": "payment",        // payment | accrual | distribution | meter_reading | meter_charge | period_close | meter_correction | ownership
   "doc_date": "2025-03-15",
   "status": "posted",           // draft | posted | cancelled
   "amount": 100.00,             // null для некоторых типов
@@ -353,6 +368,9 @@ Authorization: Bearer <superadmin_token>
 
 ### GET /plot_summary?organization_id=eq.<uuid>
 Сводка по участкам: владелец + долг. **Основной отчёт казначея.**
+
+**Семантика владельца (миграция 012):** для каждого участка берётся **последний по времени проведения** документ из журнала `documents`, у которых `doc_type = 'ownership'`, со статусом **`posted`**; к нему джойнятся строки **`private.doc_ownership`** с тем же `document_id` и `object_type = 'plot'`.  
+Если в этом документе **ровно один** собственник (одна строка на участок) — в ответ попадают `owner_id`, `owner_phone` и одиночное `owner_name`. Если **совладельцев несколько**, то **`owner_id` = null**, а **`owner_name`** — конкатенация ФИО (порядок по `contractor_id`).
 
 ```json
 [{
@@ -590,6 +608,154 @@ Authorization: Bearer <superadmin_token>
 
 ---
 
+### POST /rpc/create_ownership
+Создать **черновик** документа владения: одна строка в `documents` (`doc_type = 'ownership'`, `status = 'draft'`) и связанная строка в `doc_ownership` (инициализируются **доля** `shares = 1`; расширение под совладение заложено в схеме).
+
+**Изоляция:** `p_org_id` должен совпадать с организацией из JWT пользователя (`private.current_org_id()`). У роли **`superadmin`** контекст организации из токена пустой — может передавать любой существующий `p_org_id` (по общему паттерну остальных RPC с `p_org_id`).
+
+**Request:**
+```json
+{
+  "p_org_id": "uuid",
+  "p_contractor_id": "uuid",
+  "p_object_id": "uuid",
+  "p_object_type": "plot",
+  "p_doc_date": "2025-03-15",
+  "p_notes": null,
+  "p_created_by": null
+}
+```
+
+Параметры по умолчанию совпадают с сигнатурой `api.create_ownership`: `p_object_type` — `'plot'`, `p_doc_date` — текущая дата, `p_notes` / `p_created_by` — опционально (`NULL`).
+
+**Response:**
+```json
+{
+  "ok": true,
+  "doc_id": "uuid",
+  "document_id": "uuid",
+  "status": "draft"
+}
+```
+
+Здесь **`doc_id`** — идентификатор строки **`doc_ownership.id`** (используется в `post_ownership` / `unpost_ownership`), **`document_id`** — идентификатор строки в журнале **`documents`**.
+
+---
+
+### POST /rpc/post_ownership
+Провести документ владения: обновляет статусы в `documents` и `doc_ownership`, при необходимости создаёт члена кооператива (как в логике функции), двигает **`organizations.actuality_moment`** вперёд до `posted_at` проведения.
+
+**Request:** `p_doc_id` — это **`doc_ownership.id`** (не `documents.id`).
+
+```json
+{"p_doc_id": "uuid"}
+```
+
+**Ответ при успехе (пример):**
+```json
+{
+  "ok": true,
+  "doc_id": "uuid",
+  "document_id": "uuid",
+  "object_type": "plot",
+  "object_id": "uuid",
+  "contractor_id": "uuid"
+}
+```
+
+Типичные ошибки в поле **`error`** (наряду с общими кодами таблицы выше):
+
+- **`MISSING_DOCUMENT_LINK`** — у строки владения не задан связанный журнал (`document_id` пустой);
+- **`PERIOD_LOCKED`** — дата документа попадает в закрытый период;
+- **`ORG_MISMATCH`** — документ другой организации, чем JWT;
+- **`ALREADY_POSTED`**, **`DOC_NOT_FOUND`**, **`DOCUMENT_NOT_DRAFT`**, **`JOURNAL_NOT_FOUND`**, **`JOURNAL_MISMATCH`** — несогласованное состояние или неверная связка с журналом.
+
+---
+
+### POST /rpc/unpost_ownership
+Отменить проведение документа владения по идентификатору **`p_own_id` = `doc_ownership.id`** (тому же параметру по смыслу, что `p_doc_id` у **`post_ownership`**).
+
+**Request:**
+```json
+{"p_own_id": "uuid"}
+```
+
+**Каскад по организации:** все документы в `documents` данной организации со статусом **`posted`**, у которых **`posted_at` ≥ `posted_at` целевого** документа владения, переводятся в **`draft`**, **`posted_at`** обнуляется (также сбрасывается **`cancelled_at`**). Связанные по этим шапкам строки **`doc_ownership`** возвращаются в **`draft`**. У организации **`actuality_moment`** устанавливается равным **`posted_at` отменяемого документа минус 1 мс**.
+
+**⚠️ Важно:** движения в **`account_movements`** и **`debt_movements`** (и прочие следы проведения других типов документов) **не сторнируются** автоматически. После каскадной отмены журнал и владение могут не совпадать с фактическими остатками/долгами; пользователю нужно **заново провести** затронутые документы, чтобы привести регистры в соответствие.
+
+**Response (пример):**
+```json
+{
+  "ok": true,
+  "own_id": "uuid",
+  "document_id": "uuid",
+  "boundary_posted_at": "2025-03-15T10:30:00.123456+00:00",
+  "cascade_documents": 3,
+  "doc_ownership_rows_reset": 2
+}
+```
+
+Ошибки: в частности **`NOT_POSTED`** (не проведён), **`MISSING_DOCUMENT_LINK`**, **`PERIOD_LOCKED`**, **`ORG_MISMATCH`**, **`DOC_NOT_FOUND`**, **`JOURNAL_*`**, **`MISSING_POSTED_AT`**.
+
+---
+
+### Справочники: RPC-обновление (миграция 011)
+
+Вспомогательные вызовы с именами параметров, совпадающими с SQL.
+
+#### POST /rpc/update_plot
+```json
+{
+  "p_org_id": "uuid",
+  "p_plot_id": "uuid",
+  "p_number": "42",
+  "p_area": 6.00,
+  "p_is_active": true
+}
+```
+**Response:** `{"ok": true, "plot_id": "uuid"}`
+
+#### POST /rpc/create_meter
+```json
+{
+  "p_org_id": "uuid",
+  "p_plot_id": "uuid",
+  "p_meter_type": "water",
+  "p_serial_number": "A123456"
+}
+```
+`p_meter_type`: `water` | `electricity` | `gas`.  
+**Response:** `{"ok": true, "meter_id": "uuid"}`
+
+#### POST /rpc/update_meter
+```json
+{
+  "p_org_id": "uuid",
+  "p_meter_id": "uuid",
+  "p_meter_type": "water",
+  "p_serial_number": "A123456",
+  "p_is_active": true
+}
+```
+**Response:** `{"ok": true, "meter_id": "uuid"}`
+
+#### POST /rpc/update_contractor
+```json
+{
+  "p_org_id": "uuid",
+  "p_contractor_id": "uuid",
+  "p_full_name": "Иванов Иван Иванович",
+  "p_contractor_type": "individual",
+  "p_phone": "+375...",
+  "p_email": null
+}
+```
+`p_contractor_type`: `individual` | `legal_entity`. Телефон и email опциональны (`NULL` по умолчанию в сигнатуре).  
+**Response:** `{"ok": true, "contractor_id": "uuid"}`
+
+---
+
 ### POST /rpc/cancel_document
 Отменить проведённый документ (создаёт сторно-записи).
 
@@ -643,6 +809,15 @@ Authorization: Bearer <superadmin_token>
 3. Теперь движения за закрытый период будут отклонены с ошибкой PERIOD_LOCKED
 ```
 
+### Сценарий 6: Оформить владение участком
+```
+1. POST /rpc/create_ownership (p_object_id — участок, p_contractor_id — собственник)
+2. POST /rpc/post_ownership (p_doc_id = doc_id из шага 1)
+3. GET /plot_summary ← владелец и долг для UI
+```
+
+Отмена проведения владения с каскадом по времени: **`POST /rpc/unpost_ownership`** (см. описание RPC; движения по счетам не сторнируются).
+
 ---
 
 ## Прямые INSERT через PostgREST
@@ -664,8 +839,9 @@ POST /contractors
 ### Создать участок
 ```
 POST /plots
-{"organization_id": "uuid", "number": "42", "area": 6.0, "owner_id": "uuid"}
+{"organization_id": "uuid", "number": "42", "area": 6.0}
 ```
+При необходимости `owner_id` в справочнике — отдельная политика данных; **канонический текущий владелец после 012** задаётся документами **`ownership`** (`create_ownership` / `post_ownership`) и отражается в **`plot_summary`**.
 
 ### Создать документ ПоказаниеСчётчика + детали
 ```
@@ -690,4 +866,4 @@ POST /doc_meter_reading
 
 ---
 
-*Версия: 1.0 | Дата: 2026-05-07 | Backend: PostgreSQL 16 + PostgREST 14.11*
+*Версия: 1.0 | Дата: 2026-05-15 | Backend: PostgreSQL 16 + PostgREST 14.11. Документы владения и `actuality_moment`: миграция 012.*
