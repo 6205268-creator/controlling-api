@@ -442,3 +442,37 @@ GRANT SELECT ON api.plot_summary TO authenticated;
 
 DELETE FROM private.financial_object_registry
 WHERE object_type = 'plot'::private.fin_object_type;
+
+-- ---------------------------------------------------------------------------
+-- Демо-контрагенты после wipe в 010 (DELETE FROM private.contractors)
+-- По 5 физлиц + 2 юрлица на организацию; contractor_type доступен с шага 010.
+-- Идемпотентно: пара (organization_id, full_name).
+-- ---------------------------------------------------------------------------
+
+INSERT INTO private.contractors (organization_id, full_name, contractor_type, phone, email)
+SELECT o.id, v.full_name, v.contractor_type, v.phone, v.email
+FROM private.organizations o
+CROSS JOIN (VALUES
+    -- Демо-А: юрлица + физлица
+    ('СТ «Демо-А»', 'ООО «Земледел»',               'legal_entity'::varchar(20), NULL::text, 'zemledel-a@demo.controlling.local'),
+    ('СТ «Демо-А»', 'УП "СТ «Демо-А»" (исполком)', 'legal_entity'::varchar(20), NULL::text, 'ispolkom-a@demo.controlling.local'),
+    ('СТ «Демо-А»', 'Иванов Иван Иванович',        'individual'::varchar(20), '+375291000001', NULL::text),
+    ('СТ «Демо-А»', 'Петрова Мария Сергеевна',     'individual'::varchar(20), '+375291000002', NULL::text),
+    ('СТ «Демо-А»', 'Сидоров Пётр Алексеевич',    'individual'::varchar(20), '+375291000003', NULL::text),
+    ('СТ «Демо-А»', 'Козлова Елена Викторовна',    'individual'::varchar(20), '+375291000004', NULL::text),
+    ('СТ «Демо-А»', 'Морозов Дмитрий Николаевич', 'individual'::varchar(20), '+375291000005', NULL::text),
+    -- Демо-Б
+    ('СТ «Демо-Б»', 'ООО «АгроПром»',               'legal_entity'::varchar(20), NULL::text, 'agroprom-b@demo.controlling.local'),
+    ('СТ «Демо-Б»', 'УП "СТ «Демо-Б»" (исполком)', 'legal_entity'::varchar(20), NULL::text, 'ispolkom-b@demo.controlling.local'),
+    ('СТ «Демо-Б»', 'Николаев Сергей Петрович',    'individual'::varchar(20), '+375291000101', NULL::text),
+    ('СТ «Демо-Б»', 'Орлова Анна Дмитриевна',      'individual'::varchar(20), '+375291000102', NULL::text),
+    ('СТ «Демо-Б»', 'Волков Андрей Игоревич',      'individual'::varchar(20), '+375291000103', NULL::text),
+    ('СТ «Демо-Б»', 'Соколова Ольга Павловна',     'individual'::varchar(20), '+375291000104', NULL::text),
+    ('СТ «Демо-Б»', 'Лебедев Игорь Максимович',    'individual'::varchar(20), '+375291000105', NULL::text)
+) AS v(org_name, full_name, contractor_type, phone, email)
+WHERE o.name = v.org_name
+  AND NOT EXISTS (
+      SELECT 1
+      FROM private.contractors c
+      WHERE c.organization_id = o.id AND c.full_name = v.full_name
+  );
