@@ -1,1 +1,19 @@
+# Migrations (Alembic)
+
+Фактические изменения схемы — SQL-файлы в каталоге `../sql/`.
+
+Ревизии Alembic в `versions/` вызывают эти файлы через `migrations/sql_migration.apply_sql_file`
+(если объекты `api` принадлежат роли `postgres`, см. `ALEMBIC_PSQL_AS_USER` в DEPLOY.md).
+
+```bash
+export ALEMBIC_PSQL_AS_USER=postgres   # при необходимости на вашем хосте
+.venv/bin/alembic upgrade head
+```
+
+Baseline-пустышка `51549866f9f4` означает, что миграции 001–010 были применены вручную
+до введения Alembic; начиная с `729e2f5b58b0`/`170ab3a20987` файлы `011`/`012` применяются
+через Alembic.
+
+---
+
 Generic single-database configuration.

@@ -65,11 +65,36 @@ docker compose down -v
 
 ## Обновление (новая миграция)
 
+### Alembic (рекомендуется для уже поднятой БД)
+
+Схема хранится в `sql/*.sql`, а **Alembic** последовательно применяет новые файлы через `psql` (см. `migrations/versions/*.py` и `migrations/sql_migration.py`).
+
+На сервере, где объекты `api.*` принадлежат роли **`postgres`**, а не `controlling_user`, перед `upgrade` задайте выполнение `psql` от суперпользователя и передайте SQL на stdin (см. `ALEMBIC_PSQL_AS_USER` в `sql_migration.py`):
+
+```bash
+cd /path/to/controlling-api   # или controlling-backend
+export ALEMBIC_PSQL_AS_USER=postgres
+.venv/bin/alembic upgrade head
+unset ALEMBIC_PSQL_AS_USER
+```
+
+Нужен `sudo` без пароля на `-u postgres` **или** запуск из-под учётки с правом вызывать `sudo -u postgres`.
+
+После миграций **перезапустите PostgREST**, чтобы обновился кэш схемы:
+
+```bash
+docker compose restart postgrest
+# или: sudo systemctl restart postgrest-controlling
+```
+
+### Вручную через SQL (как раньше)
+
 ```bash
 # 1. Добавить новый SQL-файл в sql/
 # 2. Добавить его вызов в docker/postgres/init.sh (для новых установок)
-# 3. На работающем сервере применить вручную:
-docker compose exec postgres psql -U controlling_user controlling -f /docker-entrypoint-initdb.d/sql/008_новый_файл.sql
+# 3. Добавить ревизию Alembic, вызывающую этот файл (см. migrations/)
+# 4. На работающем сервере при необходимости:
+sudo -u postgres psql -d controlling -v ON_ERROR_STOP=1 -f sql/NNN_....sql
 ```
 
 ---

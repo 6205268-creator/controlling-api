@@ -1,1 +1,14 @@
-["001_schema.sql", "002_doc_accrual.sql", "003_rpc_functions.sql", "004_extended_views.sql", "005_fixes_and_create_distribution.sql", "006_auth_and_rls.sql", "007_plot_ownerships_admin_seed.sql", "008_cleanup_roles.sql", "009_create_meter_helpers.sql"]
+[
+  "001_schema.sql",
+  "002_doc_accrual.sql",
+  "003_rpc_functions.sql",
+  "004_extended_views.sql",
+  "005_fixes_and_create_distribution.sql",
+  "006_auth_and_rls.sql",
+  "007_plot_ownerships_admin_seed.sql",
+  "008_cleanup_roles.sql",
+  "009_create_meter_helpers.sql",
+  "010_ownership_flow.sql",
+  "011_crud_rpc.sql",
+  "012_ownership_journal_actuality.sql"
+]
