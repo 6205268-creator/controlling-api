@@ -83,7 +83,9 @@ LIMIT 1
 
 ## Что делаем по шагам
 
-### Миграция 011
+### Миграция 012
+
+**Файл:** `sql/012_ownership_journal_actuality.sql` — здесь DDL и RPC редизайна владения. Миграция `011_crud_rpc.sql` остаётся отдельно (универсальный CRUD RPC).
 
 1. `documents.doc_type` — добавить `'ownership'` в CHECK constraint
 2. `doc_ownership` — добавить поля:
@@ -110,7 +112,13 @@ Seed создаёт только справочники:
 
 ### init.sh (обновление)
 
-Добавить применение миграций 008, 009, 010, 011 после 007.
+После `007` (`007_plot_ownerships_admin_seed.sql`) применять миграции **строго в порядке: 008, 009, 010, 011, 012**:
+
+1. `008_cleanup_roles.sql`
+2. `009_create_meter_helpers.sql`
+3. `010_ownership_flow.sql`
+4. `011_crud_rpc.sql`
+5. `012_ownership_journal_actuality.sql`
 
 ### Текущая база
 
