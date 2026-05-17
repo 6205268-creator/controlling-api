@@ -756,6 +756,67 @@ Authorization: Bearer <superadmin_token>
 
 ---
 
+### POST /rpc/delete_draft
+Удалить черновик документа любого типа.
+
+**Request:** `{ "p_doc_id": "uuid" }`
+
+**Response:**
+- `{"ok": true}` — удалён
+- `{"ok": false, "error": "NOT_FOUND"}` — документ не найден
+- `{"ok": false, "error": "NOT_DRAFT"}` — документ не в статусе draft
+- `{"ok": false, "error": "ORG_MISMATCH"}` — чужая организация
+
+Для `doc_type = 'ownership'` автоматически удаляет связанные строки `doc_ownership` (FK NO ACTION).
+
+---
+
+### GET /org_settings
+Настройки организации: дата запрета изменений и рабочая дата периода.
+
+```
+GET /org_settings?organization_id=eq.<uuid>
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+[{
+  "organization_id": "uuid",
+  "lock_date": "2025-12-31",
+  "current_period": "2026-01-01"
+}]
+```
+
+Поля могут быть `null` если не заданы.
+
+---
+
+### POST /rpc/set_lock_date
+Установить дату запрета изменений (документы с `doc_date <= lock_date` нельзя провести).
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_lock_date": "2025-12-31" }
+```
+`p_lock_date: null` — снять блокировку.
+
+**Response:** `{"ok": true}`
+
+---
+
+### POST /rpc/set_current_period
+Установить рабочую дату периода (UI-настройка, не блокирует документы).
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_period": "2026-01-01" }
+```
+
+**Response:** `{"ok": true}`
+
+---
+
 ### POST /rpc/cancel_document
 Отменить проведённый документ (создаёт сторно-записи).
 
