@@ -86,6 +86,8 @@ Authorization: Bearer <token>
 | `demo_a_treasury` | `treasury123` | treasurer | СТ «Демо-А» |
 | `demo_b_chair` | `chair123` | admin | СТ «Демо-Б» |
 | `demo_b_treasury` | `treasury123` | treasurer | СТ «Демо-Б» |
+| `autotest_chair` | `autotest123` | admin | СТ «Авто-тест» (чистая, для автотестов) |
+| `autotest_treasury` | `autotest123` | treasurer | СТ «Авто-тест» (чистая, для автотестов) |
 | `superadmin` | `super123` | superadmin | все организации |
 
 > `admin` / `admin123` (организация-заглушка UUID 1111...) — удалить перед продакшном.
@@ -167,6 +169,8 @@ Authorization: Bearer <superadmin_token>
 | `ALREADY_POSTED` | Документ владения уже проведён |
 | `NOT_POSTED` | Операция допустима только для проведённого документа владения |
 | `MISSING_POSTED_AT` | У документа в журнале отсутствует `posted_at` (несогласованное состояние) |
+| `EMPTY_TYPES` | Передан пустой или NULL массив типов счётчиков в `set_meter_types` |
+| `INVALID_METER_TYPE` | Недопустимый тип счётчика (допустимо: water, electricity, gas) |
 
 ---
 
@@ -772,7 +776,7 @@ Authorization: Bearer <superadmin_token>
 ---
 
 ### GET /org_settings
-Настройки организации: дата запрета изменений и рабочая дата периода.
+Настройки организации: дата запрета изменений, рабочая дата периода, типы счётчиков.
 
 ```
 GET /org_settings?organization_id=eq.<uuid>
@@ -784,11 +788,13 @@ Authorization: Bearer <token>
 [{
   "organization_id": "uuid",
   "lock_date": "2025-12-31",
-  "current_period": "2026-01-01"
+  "current_period": "2026-01-01",
+  "enabled_meter_types": ["water", "electricity", "gas"]
 }]
 ```
 
-Поля могут быть `null` если не заданы.
+`lock_date` и `current_period` могут быть `null` если не заданы.  
+`enabled_meter_types` — дефолт `["water","electricity","gas"]` если не задано через `set_meter_types`.
 
 ---
 
@@ -831,6 +837,22 @@ Authorization: Bearer <token>
 `p_lock_date: null` — снять блокировку.
 
 **Response:** `{"ok": true}`
+
+---
+
+### POST /rpc/set_meter_types
+Установить типы счётчиков для организации на текущую дату (сохраняется в историю).
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_types": ["water", "gas"] }
+```
+
+Допустимые значения `p_types`: `water`, `electricity`, `gas`. Минимум 1 элемент.
+
+**Response:** `{"ok": true}`
+
+**Ошибки:** `EMPTY_TYPES`, `INVALID_METER_TYPE: <значение>`, `ORG_MISMATCH`.
 
 ---
 
