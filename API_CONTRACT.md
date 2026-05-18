@@ -792,6 +792,35 @@ Authorization: Bearer <token>
 
 ---
 
+### GET /current_ownership
+
+Возвращает текущего владельца объекта (участка, счётчика и т.д.).
+
+**Фильтры (PostgREST query params):**
+- `object_type=eq.plot` — тип объекта: `plot`, `meter`, и др.
+- `object_id=eq.<uuid>` — ID объекта
+
+**Пример запроса:**
+```
+GET /pg/current_ownership?object_type=eq.meter&object_id=eq.<uuid>
+Authorization: Bearer <token>
+```
+
+**Ответ:**
+```json
+[{
+  "organization_id": "uuid",
+  "object_type": "meter",
+  "object_id": "uuid",
+  "owner_id": "uuid",
+  "owner_name": "Иванов Иван Иванович"
+}]
+```
+
+**Примечание:** возвращает пустой массив если объект не имеет проведённого документа владения.
+
+---
+
 ### POST /rpc/set_lock_date
 Установить дату запрета изменений (документы с `doc_date <= lock_date` нельзя провести).
 

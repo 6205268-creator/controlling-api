@@ -16,6 +16,10 @@
 | `tg-msg` | `/home/roman/bin/tg-msg` | Отправить текстовое сообщение в Telegram | ❌ Вручную |
 | `pg-backup.sh` | `/home/roman/bin/pg-backup.sh` | Резервная копия БД controlling → `/home/roman/backups/` | ✅ Cron 02:00 ежедневно |
 | `pg-morning-report.sh` | `/home/roman/bin/pg-morning-report.sh` | Утренний отчёт в Telegram: статус бэкапа, БД, API | ✅ Cron 08:00 ежедневно |
+| `migrate-test.sh` | `/home/roman/bin/migrate-test.sh` | Применить SQL-миграцию на controlling_test | ❌ |
+| `migrate-prod.sh` | `/home/roman/bin/migrate-prod.sh` | Снимок + применить SQL-миграцию на controlling | ❌ |
+| `test-reset.sh` | `/home/roman/bin/test-reset.sh` | Снести и пересоздать controlling_test с seed | ❌ |
+| `test-refresh.sh` | `/home/roman/bin/test-refresh.sh` | Скопировать прод-данные в controlling_test | ❌ |
 
 ---
 

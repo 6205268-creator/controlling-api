@@ -70,4 +70,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /
 echo "Applying 013_delete_draft_org_settings.sql..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/sql/013_delete_draft_org_settings.sql
 
+echo "Applying 014_current_ownership.sql..."
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/sql/014_current_ownership.sql
+
 echo "=== All migrations applied successfully ==="

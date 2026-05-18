@@ -1,0 +1,8 @@
+db-uri = "postgresql://controlling_user:<PASSWORD>@localhost:5432/controlling_test"
+db-schemas = "api"
+db-anon-role = "anon"
+server-port = 3101
+server-host = "127.0.0.1"
+jwt-secret = "<JWT_SECRET>"
+jwt-secret-is-base64 = false
+log-level = "info"
