@@ -82,3 +82,121 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION api.set_tariff(UUID, UUID, DATE, NUMERIC) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Step 3: api.create_meter_charge — rewrite с авто-поиском тарифа и показаний
+-- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS api.create_meter_charge(uuid, uuid, uuid, numeric, numeric, numeric, date, text);
+
+CREATE OR REPLACE FUNCTION api.create_meter_charge(
+    p_org_id   UUID,
+    p_meter_id UUID,
+    p_doc_date DATE DEFAULT CURRENT_DATE,
+    p_notes    TEXT DEFAULT NULL
+)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_ctx_org    UUID;
+    v_meter_type private.meter_type_enum;
+    v_ct_id      UUID;
+    v_rate       NUMERIC(15,4);
+    v_curr       NUMERIC(15,3);
+    v_prev       NUMERIC(15,3);
+    v_amount     NUMERIC(15,2);
+    v_doc_id     UUID;
+BEGIN
+    v_ctx_org := private.current_org_id();
+
+    IF v_ctx_org IS NOT NULL AND v_ctx_org <> p_org_id THEN
+        RAISE EXCEPTION 'ORG_MISMATCH: organization_id не совпадает с токеном';
+    END IF;
+
+    -- 1. meter_type из meters
+    SELECT meter_type::private.meter_type_enum INTO v_meter_type
+    FROM private.meters
+    WHERE id = p_meter_id AND organization_id = p_org_id AND is_active = TRUE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ORG_MISMATCH: счётчик % не найден в организации %', p_meter_id, p_org_id;
+    END IF;
+
+    -- 2. contribution_type по (org, kind=meter, meter_type)
+    SELECT id INTO v_ct_id
+    FROM private.contribution_types
+    WHERE organization_id = p_org_id
+      AND kind            = 'meter'
+      AND meter_type      = v_meter_type
+      AND is_active       = TRUE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'NO_METER_CONTRIBUTION_TYPE: нет вида взноса kind=''meter'' для типа счётчика %', v_meter_type;
+    END IF;
+
+    -- 3. Два последних показания (newest = current, second = previous)
+    WITH last_two AS (
+        SELECT reading,
+               ROW_NUMBER() OVER (ORDER BY period DESC) AS rn
+        FROM private.meter_readings
+        WHERE meter_id = p_meter_id
+        ORDER BY period DESC
+        LIMIT 2
+    )
+    SELECT
+        MAX(reading) FILTER (WHERE rn = 1),
+        MAX(reading) FILTER (WHERE rn = 2)
+    INTO v_curr, v_prev
+    FROM last_two;
+
+    IF v_prev IS NULL THEN
+        RAISE EXCEPTION 'NO_PREVIOUS_READING: недостаточно показаний (нужно минимум 2, есть 1 или 0)';
+    END IF;
+
+    -- 4. Тариф на p_doc_date (СрезПоследних)
+    SELECT rate INTO v_rate
+    FROM private.tariffs
+    WHERE contribution_type_id = v_ct_id
+      AND valid_from           <= p_doc_date
+    ORDER BY valid_from DESC
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'NO_TARIFF_FOR_DATE: нет тарифа для вида взноса % на дату %', v_ct_id, p_doc_date;
+    END IF;
+
+    -- 5. Сумма начисления
+    v_amount := ROUND((v_curr - v_prev) * v_rate, 2);
+
+    IF v_amount <= 0 THEN
+        RAISE EXCEPTION 'INVALID_AMOUNT: сумма %.2f должна быть > 0 (current=%, previous=%, rate=%)',
+            v_amount, v_curr, v_prev, v_rate;
+    END IF;
+
+    -- 6. Документ
+    INSERT INTO private.documents (organization_id, doc_type, doc_date, status, notes)
+    VALUES (p_org_id, 'meter_charge', p_doc_date, 'draft', p_notes)
+    RETURNING id INTO v_doc_id;
+
+    INSERT INTO private.doc_meter_charge (
+        document_id, meter_id, contribution_type_id,
+        reading_current, reading_previous, tariff_rate, amount
+    ) VALUES (
+        v_doc_id, p_meter_id, v_ct_id,
+        v_curr, v_prev, v_rate, v_amount
+    );
+
+    RETURN jsonb_build_object(
+        'ok',               true,
+        'document_id',      v_doc_id,
+        'status',           'draft',
+        'consumption',      v_curr - v_prev,
+        'amount',           v_amount,
+        'reading_current',  v_curr,
+        'reading_previous', v_prev,
+        'tariff_rate',      v_rate
+    );
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION api.create_meter_charge(UUID, UUID, DATE, TEXT) TO authenticated;
