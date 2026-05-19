@@ -253,6 +253,10 @@ BEGIN
     FROM private.doc_meter_charge
     WHERE document_id = p_doc_id;
 
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'CHARGE_LINE_NOT_FOUND: строка doc_meter_charge для документа % не найдена', p_doc_id;
+    END IF;
+
     DELETE FROM private.debt_movements WHERE document_id = p_doc_id;
 
     UPDATE private.documents
@@ -272,3 +276,107 @@ $$;
 
 GRANT EXECUTE ON FUNCTION api.unpost_meter_charge(UUID) TO authenticated;
 REVOKE EXECUTE ON FUNCTION api.unpost_meter_charge(UUID) FROM anon;
+
+-- ---------------------------------------------------------------------------
+-- Step 5: api.unpost_meter_reading — каскадная отмена
+-- Отменяет проведённое показание счётчика.
+-- Каскад: все posted документы организации с posted_at >= posted_at цели.
+-- Для meter_reading: удаляет из meter_readings.
+-- Для meter_charge: удаляет из debt_movements.
+-- Для ownership: сбрасывает doc_ownership.status = 'draft'.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION api.unpost_meter_reading(p_doc_id UUID)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_ctx_org           UUID;
+    v_doc               private.documents%ROWTYPE;
+    v_org               UUID;
+    v_boundary          TIMESTAMPTZ;
+    v_locked_until      DATE;
+    v_cascade_ids       UUID[];
+    v_cascade_n         INT;
+    v_readings_removed  INT;
+    v_movements_removed INT;
+BEGIN
+    v_ctx_org := private.current_org_id();
+
+    SELECT * INTO v_doc
+    FROM private.documents
+    WHERE id = p_doc_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'DOC_NOT_FOUND: документ % не найден', p_doc_id;
+    END IF;
+
+    IF v_ctx_org IS NOT NULL AND v_doc.organization_id <> v_ctx_org THEN
+        RAISE EXCEPTION 'ORG_MISMATCH: organization_id не совпадает с токеном';
+    END IF;
+
+    IF v_doc.doc_type <> 'meter_reading' THEN
+        RAISE EXCEPTION 'WRONG_DOC_TYPE: ожидается meter_reading, получено %', v_doc.doc_type;
+    END IF;
+
+    IF v_doc.status <> 'posted' THEN
+        RAISE EXCEPTION 'NOT_POSTED: можно отменить только проведённый документ, текущий статус: %', v_doc.status;
+    END IF;
+
+    v_org      := v_doc.organization_id;
+    v_boundary := v_doc.posted_at;
+
+    IF v_boundary IS NULL THEN
+        RAISE EXCEPTION 'MISSING_POSTED_AT: у документа нет posted_at';
+    END IF;
+
+    SELECT pl.locked_until INTO v_locked_until
+    FROM private.period_locks pl
+    WHERE pl.organization_id = v_org;
+
+    IF v_locked_until IS NOT NULL AND v_doc.doc_date <= v_locked_until THEN
+        RAISE EXCEPTION 'PERIOD_LOCKED: дата документа в закрытом периоде (locked_until=%)', v_locked_until;
+    END IF;
+
+    WITH upd AS (
+        UPDATE private.documents d
+        SET status    = 'draft',
+            posted_at = NULL
+        WHERE d.organization_id = v_org
+          AND d.status          = 'posted'
+          AND d.posted_at       >= v_boundary
+        RETURNING d.id
+    )
+    SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) INTO v_cascade_ids
+    FROM upd;
+
+    v_cascade_n := cardinality(v_cascade_ids);
+
+    DELETE FROM private.meter_readings
+    WHERE document_id = ANY(v_cascade_ids);
+    GET DIAGNOSTICS v_readings_removed = ROW_COUNT;
+
+    DELETE FROM private.debt_movements
+    WHERE document_id = ANY(v_cascade_ids);
+    GET DIAGNOSTICS v_movements_removed = ROW_COUNT;
+
+    UPDATE private.doc_ownership
+    SET status = 'draft'
+    WHERE document_id = ANY(v_cascade_ids);
+
+    RETURN jsonb_build_object(
+        'ok',                     true,
+        'doc_id',                 p_doc_id,
+        'boundary_posted_at',     v_boundary,
+        'cascade_documents',      v_cascade_n,
+        'meter_readings_removed', v_readings_removed,
+        'debt_movements_removed', v_movements_removed
+    );
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION api.unpost_meter_reading(UUID) TO authenticated;
+REVOKE EXECUTE ON FUNCTION api.unpost_meter_reading(UUID) FROM anon;
+
+COMMENT ON FUNCTION api.unpost_meter_reading(UUID) IS
+    'Отмена проведения показания счётчика; каскад по documents.posted_at внутри организации.';
