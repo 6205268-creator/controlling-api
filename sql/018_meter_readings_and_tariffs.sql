@@ -167,7 +167,7 @@ BEGIN
     v_amount := ROUND((v_curr - v_prev) * v_rate, 2);
 
     IF v_amount <= 0 THEN
-        RAISE EXCEPTION 'INVALID_AMOUNT: сумма %.2f должна быть > 0 (current=%, previous=%, rate=%)',
+        RAISE EXCEPTION 'INVALID_AMOUNT: сумма % должна быть > 0 (current=%, previous=%, rate=%)',
             v_amount, v_curr, v_prev, v_rate;
     END IF;
 
@@ -200,3 +200,9 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION api.create_meter_charge(UUID, UUID, DATE, TEXT) TO authenticated;
+REVOKE EXECUTE ON FUNCTION api.create_meter_charge(UUID, UUID, DATE, TEXT) FROM anon;
+
+-- Enforce: at most one active meter-kind contribution_type per (org, meter_type)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ct_org_meter_type
+    ON private.contribution_types (organization_id, meter_type)
+    WHERE kind = 'meter' AND is_active = TRUE;
