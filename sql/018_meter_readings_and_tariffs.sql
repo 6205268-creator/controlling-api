@@ -206,3 +206,69 @@ REVOKE EXECUTE ON FUNCTION api.create_meter_charge(UUID, UUID, DATE, TEXT) FROM 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ct_org_meter_type
     ON private.contribution_types (organization_id, meter_type)
     WHERE kind = 'meter' AND is_active = TRUE;
+
+-- ---------------------------------------------------------------------------
+-- Step 4: api.unpost_meter_charge — точечная отмена начисления
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION api.unpost_meter_charge(p_doc_id UUID)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_ctx_org      UUID;
+    v_doc          private.documents%ROWTYPE;
+    v_locked_until DATE;
+    v_amount       NUMERIC(15,2);
+BEGIN
+    v_ctx_org := private.current_org_id();
+
+    SELECT * INTO v_doc
+    FROM private.documents
+    WHERE id = p_doc_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'DOC_NOT_FOUND: документ % не найден', p_doc_id;
+    END IF;
+
+    IF v_ctx_org IS NOT NULL AND v_doc.organization_id <> v_ctx_org THEN
+        RAISE EXCEPTION 'ORG_MISMATCH: organization_id не совпадает с токеном';
+    END IF;
+
+    IF v_doc.doc_type <> 'meter_charge' THEN
+        RAISE EXCEPTION 'WRONG_DOC_TYPE: ожидается meter_charge, получено %', v_doc.doc_type;
+    END IF;
+
+    IF v_doc.status <> 'posted' THEN
+        RAISE EXCEPTION 'NOT_POSTED: можно отменить только проведённый документ, текущий статус: %', v_doc.status;
+    END IF;
+
+    SELECT pl.locked_until INTO v_locked_until
+    FROM private.period_locks pl
+    WHERE pl.organization_id = v_doc.organization_id;
+
+    IF v_locked_until IS NOT NULL AND v_doc.doc_date <= v_locked_until THEN
+        RAISE EXCEPTION 'PERIOD_LOCKED: дата документа в закрытом периоде (locked_until=%)', v_locked_until;
+    END IF;
+
+    SELECT amount INTO v_amount
+    FROM private.doc_meter_charge
+    WHERE document_id = p_doc_id;
+
+    DELETE FROM private.debt_movements WHERE document_id = p_doc_id;
+
+    UPDATE private.documents
+    SET status    = 'draft',
+        posted_at = NULL
+    WHERE id = p_doc_id;
+
+    RETURN jsonb_build_object(
+        'ok',              true,
+        'doc_id',          p_doc_id,
+        'amount_reversed', v_amount
+    );
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION api.unpost_meter_charge(UUID) TO authenticated;
+REVOKE EXECUTE ON FUNCTION api.unpost_meter_charge(UUID) FROM anon;
