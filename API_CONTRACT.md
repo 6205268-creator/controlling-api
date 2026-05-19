@@ -190,18 +190,31 @@ Authorization: Bearer <superadmin_token>
 ### GET /organizations
 Список организаций (тенантов).
 
+```
+GET /pg/organizations
+GET /pg/organizations?id=eq.<uuid>
+Authorization: Bearer <token>
+```
+
 **Response:**
 ```json
 [{
   "id": "uuid",
   "name": "СТ Дружное",
-  "org_type": "gardening",   // gardening | garage
+  "org_type": "gardening",
   "inn": "123456789",
-  "is_active": true
+  "is_active": true,
+  "actuality_moment": "2026-05-17T13:00:04.232206-04:00",
+  "actuality_document_id": "uuid",
+  "actuality_doc_date": "2026-05-17"
 }]
 ```
 
-В представлении `api.organizations` поле **`actuality_moment`** (оперативная дата актуальности проведения по организации, миграция 012) **не выдаётся** — значение хранится в БД и обновляется при проведении/отмене документов владения на стороне сервера до появления отдельной выдачи через API/view.
+`org_type`: `gardening` | `garage`.  
+`actuality_moment` — timestamp последнего проведённого документа владения; `null` если не проводилось.  
+`actuality_document_id` — `documents.id` документа, установившего `actuality_moment`; используется для ссылки на документ в UI.  
+`actuality_doc_date` — `doc_date` того же документа для отображения даты без дополнительного запроса.  
+Все три поля `null` если ни один документ владения не проводился.
 
 ### GET /contractors?organization_id=eq.<uuid>
 Список контрагентов (физлица-плательщики).
@@ -775,11 +788,18 @@ Authorization: Bearer <superadmin_token>
 
 ---
 
+---
+
+## Настройки организации
+
+Учётная политика — параметры ведения учёта для каждой организации.  
+Хранятся в `private.org_settings` (lock_date, current_period) и `private.org_settings_history` (типы счётчиков и будущие настройки с историей).
+
 ### GET /org_settings
-Настройки организации: дата запрета изменений, рабочая дата периода, типы счётчиков.
+Текущие настройки организации.
 
 ```
-GET /org_settings?organization_id=eq.<uuid>
+GET /pg/org_settings?organization_id=eq.<uuid>
 Authorization: Bearer <token>
 ```
 
@@ -793,10 +813,70 @@ Authorization: Bearer <token>
 }]
 ```
 
-`lock_date` и `current_period` могут быть `null` если не заданы.  
-`enabled_meter_types` — дефолт `["water","electricity","gas"]` если не задано через `set_meter_types`.
+| Поле | Описание | Null? |
+|------|----------|-------|
+| `lock_date` | Дата запрета изменений — документы с `doc_date <= lock_date` нельзя провести | да |
+| `current_period` | Рабочий период (UI-ориентир, не блокирует) | да |
+| `enabled_meter_types` | Типы счётчиков, активных в учёте | нет (дефолт `["water","electricity","gas"]`) |
+
+Допустимые значения `enabled_meter_types`: `water`, `electricity`, `gas`.
+
+### POST /rpc/set_meter_types
+Установить активные типы счётчиков для организации.
+
+```
+POST /pg/rpc/set_meter_types
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_types": ["water", "electricity"] }
+```
+
+**Response:** `{"ok": true}`
+
+**Ошибки:** `EMPTY_TYPES`, `INVALID_METER_TYPE: <значение>`, `ORG_MISMATCH`.
+
+Изменение сохраняется в историю с датой `CURRENT_DATE`. Дефолт (все три типа) применяется до первого вызова.
+
+### POST /rpc/set_lock_date
+Установить дату запрета изменений.
+
+```
+POST /pg/rpc/set_lock_date
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_lock_date": "2025-12-31" }
+```
+`p_lock_date: null` — снять блокировку.
+
+**Response:** `{"ok": true}`
+
+### POST /rpc/set_current_period
+Установить рабочий период (UI-настройка, не блокирует документы).
+
+```
+POST /pg/rpc/set_current_period
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_period": "2026-01-01" }
+```
+
+**Response:** `{"ok": true}`
 
 ---
+
+## Владение объектами
 
 ### GET /current_ownership
 
@@ -824,47 +904,6 @@ Authorization: Bearer <token>
 ```
 
 **Примечание:** возвращает пустой массив если объект не имеет проведённого документа владения.
-
----
-
-### POST /rpc/set_lock_date
-Установить дату запрета изменений (документы с `doc_date <= lock_date` нельзя провести).
-
-**Request:**
-```json
-{ "p_org_id": "uuid", "p_lock_date": "2025-12-31" }
-```
-`p_lock_date: null` — снять блокировку.
-
-**Response:** `{"ok": true}`
-
----
-
-### POST /rpc/set_meter_types
-Установить типы счётчиков для организации на текущую дату (сохраняется в историю).
-
-**Request:**
-```json
-{ "p_org_id": "uuid", "p_types": ["water", "gas"] }
-```
-
-Допустимые значения `p_types`: `water`, `electricity`, `gas`. Минимум 1 элемент.
-
-**Response:** `{"ok": true}`
-
-**Ошибки:** `EMPTY_TYPES`, `INVALID_METER_TYPE: <значение>`, `ORG_MISMATCH`.
-
----
-
-### POST /rpc/set_current_period
-Установить рабочую дату периода (UI-настройка, не блокирует документы).
-
-**Request:**
-```json
-{ "p_org_id": "uuid", "p_period": "2026-01-01" }
-```
-
-**Response:** `{"ok": true}`
 
 ---
 
