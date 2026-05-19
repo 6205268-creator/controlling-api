@@ -35,7 +35,23 @@ DECLARE
     v_ct      private.contribution_types%ROWTYPE;
     v_id      UUID;
 BEGIN
+    -- NULL guards first
+    IF p_org_id IS NULL THEN
+        RAISE EXCEPTION 'INVALID_ORG: p_org_id обязателен';
+    END IF;
+    IF p_valid_from IS NULL THEN
+        RAISE EXCEPTION 'INVALID_VALID_FROM: дата действия обязательна';
+    END IF;
+    IF p_rate IS NULL OR p_rate <= 0 THEN
+        RAISE EXCEPTION 'INVALID_RATE: тариф должен быть > 0, получено %', p_rate;
+    END IF;
+
     v_ctx_org := private.current_org_id();
+
+    -- Token org check FIRST, before trusting p_org_id
+    IF v_ctx_org IS NOT NULL AND p_org_id <> v_ctx_org THEN
+        RAISE EXCEPTION 'ORG_MISMATCH: organization_id не совпадает с токеном';
+    END IF;
 
     SELECT * INTO v_ct
     FROM private.contribution_types
@@ -49,16 +65,8 @@ BEGIN
         RAISE EXCEPTION 'ORG_MISMATCH: вид взноса принадлежит другой организации';
     END IF;
 
-    IF v_ctx_org IS NOT NULL AND v_ct.organization_id <> v_ctx_org THEN
-        RAISE EXCEPTION 'ORG_MISMATCH: organization_id не совпадает с токеном';
-    END IF;
-
     IF v_ct.kind <> 'meter' THEN
         RAISE EXCEPTION 'NOT_METER_KIND: тарифы только для видов взноса kind=''meter''';
-    END IF;
-
-    IF p_rate <= 0 THEN
-        RAISE EXCEPTION 'INVALID_RATE: тариф должен быть > 0, получено %', p_rate;
     END IF;
 
     INSERT INTO private.tariffs (organization_id, contribution_type_id, valid_from, rate)
