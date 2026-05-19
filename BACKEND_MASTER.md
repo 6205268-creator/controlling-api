@@ -143,7 +143,7 @@ git push github main
 
 ## Миграции БД
 
-Все применены: **001–010**. Управление через **Alembic** (установлен 2026-05-12).
+Все применены: **001–018** (файлы в `sql/`). Управление через **Alembic** (установлен 2026-05-12; baseline 001–010).
 
 | № | Что |
 |---|-----|
@@ -157,6 +157,9 @@ git push github main
 | 008 | Роли: удалены board/member/background, оставлены admin/treasurer/superadmin |
 | 009 | RPC-хелперы: create_meter_reading + create_meter_charge |
 | 010 | Право владения участком: doc_ownership, periodic registry, contractor_type, members.source_doc_id |
+| 011–016 | CRUD RPC, ownership journal, org_settings, autotest seed |
+| 017 | Актуальность: actuality_document_id, unpost_ownership |
+| 018 | Тарифы + unpost счётчиков: `set_tariff`, rewrite `create_meter_charge`, `unpost_meter_reading` (каскад), `unpost_meter_charge` |
 
 ### Alembic — инструмент миграций
 
@@ -200,7 +203,8 @@ cd /home/roman/controlling-backend
 Приоритетный порядок:
 
 - [x] `create_meter_reading` — готово (миграция 009)
-- [x] `create_meter_charge` — готово (миграция 009)
+- [x] `create_meter_charge` — авто-поиск тарифа/показаний (миграция 018)
+- [x] `set_tariff`, `unpost_meter_reading`, `unpost_meter_charge` — миграция 018
 - [ ] `change_password` — endpoint смены пароля
 - [ ] Logout / инвалидация токена
 - [ ] Удалить тест-пользователя `admin/admin123` перед продакшном

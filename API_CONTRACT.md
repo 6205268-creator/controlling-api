@@ -287,7 +287,8 @@ Authorization: Bearer <token>
   "id": "uuid",
   "organization_id": "uuid",
   "name": "Членский взнос",
-  "kind": "membership",   // membership | target | meter
+  "kind": "membership",   // membership | target | meter | additional
+  "meter_type": null,     // water | electricity | gas — обязателен при kind=meter
   "is_active": true
 }]
 ```
@@ -607,6 +608,102 @@ Authorization: Bearer <token>
 ```json
 {"ok": true, "document_id": "uuid", "amount": 75.50}
 ```
+
+---
+
+### POST /rpc/set_tariff
+Установить (или обновить) тариф для вида взноса с `kind = 'meter'`.
+
+**Request:**
+```json
+{
+  "p_org_id": "uuid",
+  "p_contribution_type_id": "uuid",
+  "p_valid_from": "2026-01-01",
+  "p_rate": 4.50
+}
+```
+
+**Response:**
+```json
+{"ok": true, "tariff_id": "uuid"}
+```
+
+**Ошибки:** `INVALID_CONTRIBUTION_TYPE`, `NOT_METER_KIND`, `INVALID_RATE`, `ORG_MISMATCH`, `INVALID_ORG`, `INVALID_VALID_FROM`
+
+---
+
+### POST /rpc/create_meter_charge
+Создать **черновик** начисления по счётчику. Тариф, предыдущее и текущее показания подбираются автоматически из регистра `meter_readings` и таблицы `tariffs` (связь счётчик → вид взноса через `contribution_types.meter_type`).
+
+**Request:**
+```json
+{
+  "p_org_id": "uuid",
+  "p_meter_id": "uuid",
+  "p_doc_date": "2026-05-01",
+  "p_notes": null
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "document_id": "uuid",
+  "status": "draft",
+  "consumption": 15.5,
+  "amount": 77.50,
+  "reading_current": 115.500,
+  "reading_previous": 100.000,
+  "tariff_rate": 5.0000
+}
+```
+
+**Ошибки:** `ORG_MISMATCH`, `NO_METER_CONTRIBUTION_TYPE`, `NO_PREVIOUS_READING`, `NO_TARIFF_FOR_DATE`, `INVALID_AMOUNT`
+
+> Старая сигнатура с явными `p_reading_previous` / `p_tariff_rate` удалена (миграция 018).
+
+---
+
+### POST /rpc/unpost_meter_reading
+Отменить проведение показания счётчика **с каскадом**: все проведённые документы организации с `posted_at >= posted_at` отменяемого документа переводятся в `draft`; для них удаляются записи из `meter_readings` и `debt_movements`; для `ownership` сбрасывается `doc_ownership.status`.
+
+**Request:**
+```json
+{"p_doc_id": "uuid"}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "doc_id": "uuid",
+  "boundary_posted_at": "2026-05-19T10:00:00-04:00",
+  "cascade_documents": 2,
+  "meter_readings_removed": 1,
+  "debt_movements_removed": 1
+}
+```
+
+**Ошибки:** `DOC_NOT_FOUND`, `WRONG_DOC_TYPE`, `NOT_POSTED`, `PERIOD_LOCKED`, `ORG_MISMATCH`, `MISSING_POSTED_AT`
+
+---
+
+### POST /rpc/unpost_meter_charge
+Точечная отмена начисления: только этот документ → `draft`, удаляется его движение в `debt_movements`. Каскада нет.
+
+**Request:**
+```json
+{"p_doc_id": "uuid"}
+```
+
+**Response:**
+```json
+{"ok": true, "doc_id": "uuid", "amount_reversed": 77.50}
+```
+
+**Ошибки:** `DOC_NOT_FOUND`, `WRONG_DOC_TYPE`, `NOT_POSTED`, `PERIOD_LOCKED`, `ORG_MISMATCH`, `CHARGE_LINE_NOT_FOUND`
 
 ---
 
@@ -948,10 +1045,20 @@ Authorization: Bearer <token>
 
 ### Сценарий 4: Ввести показания счётчика
 ```
-1. POST /documents + POST /doc_meter_reading (прямой INSERT)
-2. POST /rpc/post_meter_reading
-3. GET /meter_readings_view  ← новое показание
+1. POST /rpc/create_meter_reading {p_org_id, p_meter_id, p_reading_date, p_reading_value}
+2. POST /rpc/post_meter_reading {p_doc_id}
+3. GET /meter_readings_view  ← новое показание в регистре
 ```
+
+### Сценарий 4б: Начислить по счётчику (отдельно от ввода показаний)
+```
+1. POST /rpc/set_tariff  ← при смене тарифа
+2. POST /rpc/create_meter_charge {p_org_id, p_meter_id, p_doc_date}
+3. POST /rpc/post_meter_charge {p_doc_id}
+4. GET /debtors  ← долг владельца счётчика
+```
+
+Исправление ошибочного показания (открытый период): `POST /rpc/unpost_meter_reading` → каскад → ввести показание заново → при необходимости пересоздать начисление.
 
 ### Сценарий 5: Закрыть период
 ```
