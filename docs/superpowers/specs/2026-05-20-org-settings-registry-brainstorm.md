@@ -1,102 +1,135 @@
 # Брейнсторм: реестр настроек организации (migration 022)
 
 **Дата:** 2026-05-20  
-**Статус:** В процессе — продолжить со следующего вопроса  
-**Следующий шаг:** Задать вопрос 2 (см. ниже)
+**Статус:** ЗАВЕРШЁН — готово к написанию спеки и плана  
+**Следующий шаг:** invokewriting-plans для migration 022
 
 ---
 
 ## Контекст
 
 Уже есть (migration 015):
-- `private.org_settings_history` — EAV-таблица: `(organization_id, effective_from DATE, setting_name TEXT, setting_value JSONB)`
+- `private.org_settings_history` — EAV: `(organization_id, effective_from DATE, setting_name TEXT, setting_value JSONB)`
 - `api.org_settings` — view, агрегирует текущие настройки
 - `api.set_meter_types` — единственный RPC для записи настроек
 
-Проблема: нет реестра — не известно какие `setting_name` допустимы, какой тип у каждого, какие значения разрешены.
+Проблема: нет реестра — не известно какие `setting_name` допустимы, какой тип, какие значения.
 
 ---
 
-## Решённые вопросы
+## Все решённые вопросы
 
-### ✅ Вопрос 1: нужна ли история?
-**Ответ: ДА.** Нужно знать что было на конкретную дату (например, 1 января). Периодичность — 1 день (effective_from = DATE).
+### ✅ Q1: нужна ли история?
+**ДА.** Периодичность = 1 день (`effective_from = DATE`).
 
----
+### ✅ Q2: формат ответа `api.org_settings`?
+**Одним запросом — все настройки** как массив объектов, каждый с текущим значением + метаданными из реестра. Фронт читает один раз, рендерит динамически по `value_type`.
 
-## Архитектурные решения (предварительные)
-
-### Новая таблица: `private.org_setting_definitions`
-Реестр — словарь всех допустимых настроек:
-
-```sql
-CREATE TABLE private.org_setting_definitions (
-    setting_name    TEXT PRIMARY KEY,
-    value_type      TEXT NOT NULL,         -- 'boolean', 'integer', 'text', 'enum', 'enum[]'
-    allowed_values  JSONB,                 -- для enum/enum[]: ["water","electricity","gas"], иначе NULL
-    default_value   JSONB NOT NULL,        -- значение если у орга нет своей записи
-    description     TEXT NOT NULL,
-    is_active       BOOLEAN NOT NULL DEFAULT true
-);
+```json
+GET /org_settings?organization_id=eq.<uuid>
+[
+  {
+    "setting_name":   "use_meters",
+    "value_type":     "boolean",
+    "description":    "Использовать счётчики",
+    "allowed_values": null,
+    "default_value":  false,
+    "current_value":  false
+  },
+  {
+    "setting_name":   "enabled_meter_types",
+    "value_type":     "enum[]",
+    "description":    "Виды счётчиков",
+    "allowed_values": ["water","electricity","gas"],
+    "default_value":  [],
+    "current_value":  ["water"]
+  }
+]
 ```
 
-### Связь с `org_settings_history`
-Добавить FK: `org_settings_history.setting_name → org_setting_definitions.setting_name`
-→ нельзя записать несуществующую настройку.
-
-### Типы значений (`value_type`):
-| Тип | Пример setting_value | Аналог в 1С |
-|-----|---------------------|-------------|
-| `boolean` | `true` | Булево |
-| `integer` | `3` | Число (целое) |
-| `text` | `"monthly"` | Строка |
-| `enum` | `"water"` | Ссылка на перечисление |
-| `enum[]` | `["water","gas"]` | Множественный выбор из перечисления |
-
-### Начальные настройки для seed:
+### ✅ Q3: начальные настройки в реестре
+Только скалярные — без ссылок на контрагентов (те идут в migration 023):
 
 | setting_name | value_type | default_value | allowed_values | description |
 |---|---|---|---|---|
 | `use_meters` | boolean | false | null | Использовать счётчики |
 | `enabled_meter_types` | enum[] | [] | ["water","electricity","gas"] | Виды счётчиков |
+| `legal_address` | text | null | null | Юридический адрес |
+| `postal_address` | text | null | null | Почтовый адрес |
 
-(остальные — по ходу разработки)
+### ✅ Q4: председатель, казначей, ревкомиссия → НЕ в реестр
+Это ссылки на контрагентов — требуют FK + историчность. Идут в **migration 023** как отдельная таблица `private.org_officers`.
 
-### Новый RPC: `api.set_org_setting(p_org_id, p_setting_name, p_value)`
-Универсальный. Логика:
-1. Найти `setting_name` в реестре → ошибка `UNKNOWN_SETTING` если нет
-2. Провалидировать `p_value` под `value_type` и `allowed_values`
-3. UPSERT в `org_settings_history` по `(org_id, CURRENT_DATE, setting_name)`
-
-### Обновить `api.org_settings` view
-Динамически читать все активные настройки из реестра + текущие значения из истории.
-Вернуть как JSONB-объект: `{"use_meters": false, "enabled_meter_types": ["water"]}`.
-
-### Судьба `set_meter_types`
-Оставить как wrapper поверх `set_org_setting` (или удалить).
+### ✅ Q5: валидация use_meters + enabled_meter_types
+Бэкенд. В RPC `set_org_setting`: если `use_meters = true` и `enabled_meter_types` в истории пустой → ошибка `METER_TYPES_REQUIRED`. Фронт тоже может проверять, но бэкенд страхует.
 
 ---
 
-## Вопросы которые ещё НЕ заданы
+## Архитектура migration 022
 
-### ❓ Вопрос 2 (следующий):
-**Как `api.org_settings` должен выдавать настройки?**
-- Вариант A: отдельная строка на каждую настройку (EAV-стиль): `{setting_name, setting_value}`
-- Вариант B: одна строка на организацию, колонка на каждую настройку (текущий стиль) 
-- Вариант C: одна строка на организацию, одна JSONB-колонка `settings: {...все настройки...}`
+### 1. Новая таблица `private.org_setting_definitions`
 
-### ❓ Вопрос 3:
-Какие ещё настройки (кроме `use_meters` и `enabled_meter_types`) нужны в seed реестра прямо сейчас?
+```sql
+CREATE TABLE private.org_setting_definitions (
+    setting_name    TEXT PRIMARY KEY,
+    value_type      TEXT    NOT NULL, -- 'boolean','integer','text','enum','enum[]'
+    allowed_values  JSONB,            -- для enum/enum[]: ["water","electricity","gas"]
+    default_value   JSONB   NOT NULL,
+    description     TEXT    NOT NULL,
+    is_active       BOOLEAN NOT NULL DEFAULT true
+);
+```
 
-### ❓ Вопрос 4:
-`set_meter_types` — оставить как есть (backward compat) или заменить на `set_org_setting`?
+### 2. Добавить FK в `org_settings_history`
+
+```sql
+ALTER TABLE private.org_settings_history
+  ADD CONSTRAINT fk_setting_name
+  FOREIGN KEY (setting_name)
+  REFERENCES private.org_setting_definitions(setting_name);
+```
+
+### 3. Seed реестра
+INSERT 4 строки (use_meters, enabled_meter_types, legal_address, postal_address).
+
+### 4. Пересоздать `api.org_settings` view
+JOIN `org_setting_definitions` (все активные) × `organizations` + LEFT JOIN `org_settings_history` (актуальное значение). Возвращает одну строку на (org, setting) с `current_value` или `default_value` если не установлено.
+
+### 5. Новый RPC `api.set_org_setting(p_org_id, p_setting_name, p_value JSONB)`
+Логика:
+1. Найти в реестре → ошибка `UNKNOWN_SETTING` если нет / is_active=false
+2. Провалидировать p_value под value_type и allowed_values
+3. Кросс-валидация: `use_meters=true` → проверить что `enabled_meter_types` не пустой
+4. UPSERT в `org_settings_history` (org_id, CURRENT_DATE, setting_name)
+
+### 6. `set_meter_types` → заменить на wrapper или удалить
+Заменить реализацию: внутри вызывать `set_org_setting`.
 
 ---
 
-## Следующие шаги
+## Migration 023 (следующая): `org_officers`
 
-1. Задать вопрос 2 (формат ответа `api.org_settings`)
-2. Задать вопрос 3 (начальные настройки)
-3. Предложить 2-3 варианта архитектуры
-4. Написать спеку
-5. Создать migration 022
+```sql
+private.org_officers (
+  organization_id  UUID FK → organizations
+  contractor_id    UUID FK → contractors   -- нельзя удалить контрагента пока есть строка
+  officer_type     TEXT   -- 'chairman', 'treasurer', 'audit_member'
+  effective_from   DATE
+  effective_to     DATE   -- NULL = актуально сейчас
+  PRIMARY KEY (organization_id, contractor_id, officer_type, effective_from)
+)
+```
+
+Исторический запрос: `WHERE effective_from <= doc_date AND (effective_to IS NULL OR effective_to >= doc_date)`.
+Контрагент не удаляется → `is_active = false` (soft delete).
+
+---
+
+## Новые коды ошибок
+
+| Код | Когда |
+|-----|-------|
+| `UNKNOWN_SETTING` | setting_name не найден в реестре или is_active=false |
+| `INVALID_SETTING_VALUE` | значение не соответствует value_type |
+| `INVALID_ENUM_VALUE` | значение не входит в allowed_values |
+| `METER_TYPES_REQUIRED` | use_meters=true, но enabled_meter_types пустой |
