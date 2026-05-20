@@ -171,6 +171,13 @@ Authorization: Bearer <superadmin_token>
 | `MISSING_POSTED_AT` | У документа в журнале отсутствует `posted_at` (несогласованное состояние) |
 | `EMPTY_TYPES` | Передан пустой или NULL массив типов счётчиков в `set_meter_types` |
 | `INVALID_METER_TYPE` | Недопустимый тип счётчика (допустимо: water, electricity, gas) |
+| `METER_NOT_FOUND` | Счётчик с таким ID не найден в организации |
+| `METER_CHARGE_DETAIL_MISSING` | Нет строки `doc_meter_charge` для этого документа |
+| `CHARGE_LINE_NOT_FOUND` | Нет строки `doc_meter_charge` для документа |
+| `NO_METER_CONTRIBUTION_TYPE` | Нет вида взноса `kind='meter'` для данного типа счётчика |
+| `NO_PREVIOUS_READING` | В регистре менее двух показаний — невозможно рассчитать потребление |
+| `NO_TARIFF_FOR_DATE` | Нет тарифа для данного вида взноса на указанную дату |
+| `NOT_METER_KIND` | Тарифы можно устанавливать только для видов взноса с `kind='meter'` |
 
 ---
 
@@ -336,10 +343,39 @@ Authorization: Bearer <token>
   "status": "posted",           // draft | posted | cancelled
   "amount": 100.00,             // null для некоторых типов
   "contractor_name": "Иванов Иван Иванович",
+  "own_id": null,               // doc_ownership.id — только для doc_type='ownership', иначе null; используется в post_ownership / unpost_ownership / update_ownership
   "period": null,               // для accrual и period_close
   "notes": null,
   "posted_at": "2025-03-15T10:30:00Z",
-  "cancelled_at": null
+  "cancelled_at": null,
+  "parent_id": null
+}]
+```
+
+### GET /doc_ownership?document_id=eq.<uuid>
+Строка документа владения. Удобно для отображения деталей ownership-документа в UI.
+
+```
+GET /pg/doc_ownership?document_id=eq.<uuid>
+GET /pg/doc_ownership?id=eq.<own_id>
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+[{
+  "id": "uuid",                          // doc_ownership.id = own_id
+  "document_id": "uuid",                 // documents.id
+  "organization_id": "uuid",
+  "contractor_id": "uuid",
+  "contractor_name": "Иванов Иван Иванович",
+  "object_type": "plot",
+  "object_id": "uuid",
+  "doc_date": "2025-03-15",
+  "notes": null,
+  "status": "draft",                     // draft | posted
+  "shares": 1,
+  "created_at": "2025-03-15T10:00:00Z"
 }]
 ```
 
@@ -682,7 +718,9 @@ Authorization: Bearer <token>
   "boundary_posted_at": "2026-05-19T10:00:00-04:00",
   "cascade_documents": 2,
   "meter_readings_removed": 1,
-  "debt_movements_removed": 1
+  "debt_movements_removed": 1,
+  "new_actuality_moment": "2026-05-18T09:00:00Z",       // null если нет оставшихся posted ownership-документов
+  "new_actuality_document_id": "uuid"                    // null если нет оставшихся posted ownership-документов
 }
 ```
 
@@ -811,6 +849,37 @@ Authorization: Bearer <token>
 ```
 
 Ошибки: в частности **`NOT_POSTED`** (не проведён), **`MISSING_DOCUMENT_LINK`**, **`PERIOD_LOCKED`**, **`ORG_MISMATCH`**, **`DOC_NOT_FOUND`**, **`JOURNAL_*`**, **`MISSING_POSTED_AT`**.
+
+---
+
+### POST /rpc/update_ownership
+Редактировать **черновик** документа владения (аналог «Сохранить без проведения» в 1С). Только для документов со статусом `draft`.
+
+**`p_own_id`** — это `doc_ownership.id` (то же что `own_id` из `doc_journal` и `doc_id` из `create_ownership`).
+
+**Request:**
+```json
+{
+  "p_own_id": "uuid",
+  "p_contractor_id": "uuid",
+  "p_object_id": "uuid",
+  "p_object_type": "plot",          // optional, default 'plot'
+  "p_doc_date": "2025-03-15",       // optional, null = не менять
+  "p_notes": "комментарий"          // optional
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "doc_id": "uuid",         // doc_ownership.id
+  "document_id": "uuid",    // documents.id
+  "status": "draft"
+}
+```
+
+**Ошибки:** `DOC_NOT_FOUND`, `NOT_DRAFT`, `ORG_MISMATCH`, `MISSING_DOCUMENT_LINK`, `DOCUMENT_NOT_DRAFT`
 
 ---
 
@@ -1124,4 +1193,4 @@ POST /doc_meter_reading
 
 ---
 
-*Версия: 1.0 | Дата: 2026-05-15 | Backend: PostgreSQL 16 + PostgREST 14.11. Документы владения и `actuality_moment`: миграция 012.*
+*Версия: 1.0 | Дата: 2026-05-20 | Backend: PostgreSQL 16 + PostgREST 14.11. Миграции 001–020 применены. Документы владения и `actuality_moment`: миграции 012, 017. Показания счётчиков и тарифы: миграция 018. UI-журнал владения: миграция 019.*
