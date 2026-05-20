@@ -143,7 +143,7 @@ git push github main
 
 ## Миграции БД
 
-Все применены: **001–018** (файлы в `sql/`). Управление через **Alembic** (установлен 2026-05-12; baseline 001–010).
+Все применены: **001–021** (файлы в `sql/`). Управление через **Alembic** (установлен 2026-05-12; baseline 001–010).
 
 | № | Что |
 |---|-----|
@@ -160,6 +160,9 @@ git push github main
 | 011–016 | CRUD RPC, ownership journal, org_settings, autotest seed |
 | 017 | Актуальность: actuality_document_id, unpost_ownership |
 | 018 | Тарифы + unpost счётчиков: `set_tariff`, rewrite `create_meter_charge`, `unpost_meter_reading` (каскад), `unpost_meter_charge` |
+| 019 | Ownership UI: `api.doc_ownership` view, `doc_journal` fix, `update_ownership` RPC |
+| 020 | Fix `unpost_meter_reading`: синхронизация `actuality_moment`/`actuality_document_id`; fix `METER_NOT_FOUND` код |
+| 021 | Долевое владение: `add/remove/update_ownership_owner`; `post/unpost_ownership` принимают `documents.id`; `create/update_ownership` без `contractor_id`; `doc_journal` без `own_id` |
 
 ### Alembic — инструмент миграций
 

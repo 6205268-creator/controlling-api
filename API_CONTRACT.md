@@ -162,13 +162,16 @@ Authorization: Bearer <superadmin_token>
 | `INVALID_OBJECT_TYPE` | Неверный тип объекта (допустимо: plot/member/meter) |
 | `INVALID_ROLE` | Недопустимая роль пользователя (допустимо: admin, treasurer) |
 | `ORG_MISMATCH` | Переданный `organization_id` / `p_org_id` не совпадает с организацией JWT (для пользователей с привязкой к оргу; у `superadmin` контекста орга нет — проверка не срабатывает) |
-| `DOC_NOT_FOUND` | Строка `doc_ownership` или указанный идентификатор документа не найдены |
-| `MISSING_DOCUMENT_LINK` | У строки владения не заполнен `document_id` (связь с журналом `documents`) |
-| `JOURNAL_NOT_FOUND` | Нет шапки журнала для строки владения |
-| `JOURNAL_MISMATCH` | Связанный документ не типа `ownership` или принадлежит другой организации |
-| `ALREADY_POSTED` | Документ владения уже проведён |
-| `NOT_POSTED` | Операция допустима только для проведённого документа владения |
-| `MISSING_POSTED_AT` | У документа в журнале отсутствует `posted_at` (несогласованное состояние) |
+| `DOC_NOT_FOUND` | Указанный идентификатор документа или строки не найдены |
+| `NOT_OWNERSHIP` | Переданный `document_id` указывает не на `ownership`-документ |
+| `ALREADY_POSTED` | Документ уже проведён |
+| `NOT_POSTED` | Операция допустима только для проведённого документа |
+| `NOT_DRAFT` | Операция допустима только для черновика |
+| `MISSING_POSTED_AT` | У документа отсутствует `posted_at` (несогласованное состояние) |
+| `OWNERSHIP_EMPTY` | `post_ownership` — документ не содержит ни одной строки владельцев |
+| `INVALID_SHARES` | Передано `shares <= 0` |
+| `CONTRACTOR_ALREADY_OWNER` | Контрагент уже присутствует в этом документе владения |
+| `MISSING_OBJECT` | У документа не заполнен `object_id` (шапка не содержит объекта) |
 | `EMPTY_TYPES` | Передан пустой или NULL массив типов счётчиков в `set_meter_types` |
 | `INVALID_METER_TYPE` | Недопустимый тип счётчика (допустимо: water, electricity, gas) |
 | `METER_NOT_FOUND` | Счётчик с таким ID не найден в организации |
@@ -342,8 +345,7 @@ Authorization: Bearer <token>
   "doc_date": "2025-03-15",
   "status": "posted",           // draft | posted | cancelled
   "amount": 100.00,             // null для некоторых типов
-  "contractor_name": "Иванов Иван Иванович",
-  "own_id": null,               // doc_ownership.id — только для doc_type='ownership', иначе null; используется в post_ownership / unpost_ownership / update_ownership
+  "contractor_name": "Иванов Иван, Петров Пётр",  // для ownership — агрегация всех владельцев через ', '
   "period": null,               // для accrual и period_close
   "notes": null,
   "posted_at": "2025-03-15T10:30:00Z",
@@ -760,126 +762,146 @@ Authorization: Bearer <token>
 
 ---
 
-### POST /rpc/create_ownership
-Создать **черновик** документа владения: одна строка в `documents` (`doc_type = 'ownership'`, `status = 'draft'`) и связанная строка в `doc_ownership` (инициализируются **доля** `shares = 1`; расширение под совладение заложено в схеме).
+### POST /rpc/create_ownership *(migration 021)*
+Создать **шапку** черновика документа владения (`documents.doc_type = 'ownership'`). Владельцы добавляются отдельно через `add_ownership_owner`.
 
-**Изоляция:** `p_org_id` должен совпадать с организацией из JWT пользователя (`private.current_org_id()`). У роли **`superadmin`** контекст организации из токена пустой — может передавать любой существующий `p_org_id` (по общему паттерну остальных RPC с `p_org_id`).
+**Изоляция:** `p_org_id` должен совпадать с организацией из JWT (у `superadmin` не проверяется).
 
 **Request:**
 ```json
 {
   "p_org_id": "uuid",
-  "p_contractor_id": "uuid",
   "p_object_id": "uuid",
-  "p_object_type": "plot",
-  "p_doc_date": "2025-03-15",
-  "p_notes": null,
-  "p_created_by": null
+  "p_object_type": "plot",    // optional, default 'plot'
+  "p_doc_date": "2025-03-15", // optional, default CURRENT_DATE
+  "p_notes": null,            // optional
+  "p_created_by": null        // optional
 }
 ```
-
-Параметры по умолчанию совпадают с сигнатурой `api.create_ownership`: `p_object_type` — `'plot'`, `p_doc_date` — текущая дата, `p_notes` / `p_created_by` — опционально (`NULL`).
 
 **Response:**
 ```json
 {
   "ok": true,
-  "doc_id": "uuid",
   "document_id": "uuid",
   "status": "draft"
 }
 ```
 
-Здесь **`doc_id`** — идентификатор строки **`doc_ownership.id`** (используется в `post_ownership` / `unpost_ownership`), **`document_id`** — идентификатор строки в журнале **`documents`**.
-
 ---
 
-### POST /rpc/post_ownership
-Провести документ владения: обновляет статусы в `documents` и `doc_ownership`, при необходимости создаёт члена кооператива (как в логике функции), двигает **`organizations.actuality_moment`** вперёд до `posted_at` проведения.
-
-**Request:** `p_doc_id` — это **`doc_ownership.id`** (не `documents.id`).
-
-```json
-{"p_doc_id": "uuid"}
-```
-
-**Ответ при успехе (пример):**
-```json
-{
-  "ok": true,
-  "doc_id": "uuid",
-  "document_id": "uuid",
-  "object_type": "plot",
-  "object_id": "uuid",
-  "contractor_id": "uuid"
-}
-```
-
-Типичные ошибки в поле **`error`** (наряду с общими кодами таблицы выше):
-
-- **`MISSING_DOCUMENT_LINK`** — у строки владения не задан связанный журнал (`document_id` пустой);
-- **`PERIOD_LOCKED`** — дата документа попадает в закрытый период;
-- **`ORG_MISMATCH`** — документ другой организации, чем JWT;
-- **`ALREADY_POSTED`**, **`DOC_NOT_FOUND`**, **`DOCUMENT_NOT_DRAFT`**, **`JOURNAL_NOT_FOUND`**, **`JOURNAL_MISMATCH`** — несогласованное состояние или неверная связка с журналом.
-
----
-
-### POST /rpc/unpost_ownership
-Отменить проведение документа владения по идентификатору **`p_own_id` = `doc_ownership.id`** (тому же параметру по смыслу, что `p_doc_id` у **`post_ownership`**).
+### POST /rpc/add_ownership_owner *(migration 021)*
+Добавить владельца в черновик документа владения.
 
 **Request:**
 ```json
-{"p_own_id": "uuid"}
-```
-
-**Каскад по организации:** все документы в `documents` данной организации со статусом **`posted`**, у которых **`posted_at` ≥ `posted_at` целевого** документа владения, переводятся в **`draft`**, **`posted_at`** обнуляется (также сбрасывается **`cancelled_at`**). Связанные по этим шапкам строки **`doc_ownership`** возвращаются в **`draft`**. У организации **`actuality_moment`** устанавливается равным **`posted_at` отменяемого документа минус 1 мс**.
-
-**⚠️ Важно:** движения в **`account_movements`** и **`debt_movements`** (и прочие следы проведения других типов документов) **не сторнируются** автоматически. После каскадной отмены журнал и владение могут не совпадать с фактическими остатками/долгами; пользователю нужно **заново провести** затронутые документы, чтобы привести регистры в соответствие.
-
-**Response (пример):**
-```json
 {
-  "ok": true,
-  "own_id": "uuid",
-  "document_id": "uuid",
-  "boundary_posted_at": "2025-03-15T10:30:00.123456+00:00",
-  "cascade_documents": 3,
-  "doc_ownership_rows_reset": 2
+  "p_document_id": "uuid",
+  "p_contractor_id": "uuid",
+  "p_shares": 1               // optional, default 1, должно быть > 0
 }
 ```
 
-Ошибки: в частности **`NOT_POSTED`** (не проведён), **`MISSING_DOCUMENT_LINK`**, **`PERIOD_LOCKED`**, **`ORG_MISMATCH`**, **`DOC_NOT_FOUND`**, **`JOURNAL_*`**, **`MISSING_POSTED_AT`**.
+**Response:** `{"ok": true, "own_id": "uuid"}`
+
+**Ошибки:** `DOC_NOT_FOUND`, `NOT_OWNERSHIP`, `NOT_DRAFT`, `ORG_MISMATCH`, `INVALID_SHARES`, `MISSING_OBJECT`, `CONTRACTOR_ALREADY_OWNER`
 
 ---
 
-### POST /rpc/update_ownership
-Редактировать **черновик** документа владения (аналог «Сохранить без проведения» в 1С). Только для документов со статусом `draft`.
+### POST /rpc/remove_ownership_owner *(migration 021)*
+Удалить строку владельца из черновика. Разрешено оставить 0 строк (пост с 0 строками блокируется). `members.source_doc_id` обнуляется автоматически (ON DELETE SET NULL).
 
-**`p_own_id`** — это `doc_ownership.id` (то же что `own_id` из `doc_journal` и `doc_id` из `create_ownership`).
+**Request:** `{"p_own_id": "uuid"}`
+
+**Response:** `{"ok": true}`
+
+**Ошибки:** `DOC_NOT_FOUND`, `NOT_DRAFT`, `ORG_MISMATCH`
+
+---
+
+### POST /rpc/update_ownership_owner *(migration 021)*
+Изменить контрагента и/или доли строки черновика.
 
 **Request:**
 ```json
 {
   "p_own_id": "uuid",
   "p_contractor_id": "uuid",
-  "p_object_id": "uuid",
-  "p_object_type": "plot",          // optional, default 'plot'
-  "p_doc_date": "2025-03-15",       // optional, null = не менять
-  "p_notes": "комментарий"          // optional
+  "p_shares": 2
 }
 ```
+
+**Response:** `{"ok": true, "own_id": "uuid"}`
+
+**Ошибки:** `DOC_NOT_FOUND`, `NOT_DRAFT`, `ORG_MISMATCH`, `INVALID_SHARES`, `CONTRACTOR_ALREADY_OWNER`
+
+---
+
+### POST /rpc/post_ownership *(migration 021)*
+Провести документ владения: все строки `doc_ownership` документа → `posted`; при необходимости создаёт членов кооператива; двигает `actuality_moment`.
+
+**`p_document_id`** — это `documents.id` (шапка документа, а не `doc_ownership.id`).
+
+**Request:** `{"p_document_id": "uuid"}`
 
 **Response:**
 ```json
 {
   "ok": true,
-  "doc_id": "uuid",         // doc_ownership.id
-  "document_id": "uuid",    // documents.id
-  "status": "draft"
+  "document_id": "uuid",
+  "object_type": "plot",
+  "object_id": "uuid",
+  "owners_posted": 2
 }
 ```
 
-**Ошибки:** `DOC_NOT_FOUND`, `NOT_DRAFT`, `ORG_MISMATCH`, `MISSING_DOCUMENT_LINK`, `DOCUMENT_NOT_DRAFT`
+**Ошибки:** `DOC_NOT_FOUND`, `NOT_OWNERSHIP`, `DOCUMENT_NOT_DRAFT`, `OWNERSHIP_EMPTY`, `PERIOD_LOCKED`, `ORG_MISMATCH`
+
+---
+
+### POST /rpc/unpost_ownership *(migration 021)*
+Отменить проведение документа владения по `p_document_id = documents.id`.
+
+**Request:** `{"p_document_id": "uuid"}`
+
+**Каскад по организации:** все документы со статусом `posted` и `posted_at >= posted_at` целевого → `draft`; связанные строки `doc_ownership` → `draft`; `actuality_moment` и `actuality_document_id` пересчитываются по последнему оставшемуся проведённому ownership-документу.
+
+**⚠️ Важно:** движения в `account_movements` и `debt_movements` **не сторнируются** автоматически.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "document_id": "uuid",
+  "boundary_posted_at": "2025-03-15T10:30:00.123456+00:00",
+  "cascade_documents": 3,
+  "doc_ownership_rows_reset": 4
+}
+```
+
+**Ошибки:** `DOC_NOT_FOUND`, `NOT_OWNERSHIP`, `NOT_POSTED`, `MISSING_POSTED_AT`, `PERIOD_LOCKED`, `ORG_MISMATCH`
+
+---
+
+### POST /rpc/update_ownership *(migration 021)*
+Редактировать **шапку** черновика: дата, примечания, объект. Строки владельцев управляются отдельными RPC (`add/remove/update_ownership_owner`). При изменении `p_doc_date` синхронизирует дату во всех строках `doc_ownership`.
+
+**`p_document_id`** — это `documents.id`.
+
+**Request:**
+```json
+{
+  "p_document_id": "uuid",
+  "p_doc_date": "2025-03-15",  // optional, null = не менять
+  "p_notes": "комментарий",    // optional, null = не менять
+  "p_object_id": "uuid",       // optional, null = не менять
+  "p_object_type": "plot"      // optional, null = не менять
+}
+```
+
+**Response:** `{"ok": true, "document_id": "uuid", "status": "draft"}`
+
+**Ошибки:** `DOC_NOT_FOUND`, `NOT_OWNERSHIP`, `NOT_DRAFT`, `ORG_MISMATCH`
 
 ---
 
@@ -1136,14 +1158,24 @@ Authorization: Bearer <token>
 3. Теперь движения за закрытый период будут отклонены с ошибкой PERIOD_LOCKED
 ```
 
-### Сценарий 6: Оформить владение участком
+### Сценарий 6: Оформить владение участком (migration 021)
 ```
-1. POST /rpc/create_ownership (p_object_id — участок, p_contractor_id — собственник)
-2. POST /rpc/post_ownership (p_doc_id = doc_id из шага 1)
-3. GET /plot_summary ← владелец и долг для UI
+1. POST /rpc/create_ownership    {p_org_id, p_object_id, p_doc_date}
+   → {"ok": true, "document_id": "D1"}
+
+2. POST /rpc/add_ownership_owner {p_document_id: "D1", p_contractor_id: "Ivanov", p_shares: 1}
+   → {"ok": true, "own_id": "O1"}
+
+3. POST /rpc/add_ownership_owner {p_document_id: "D1", p_contractor_id: "Petrov", p_shares: 2}
+   → {"ok": true, "own_id": "O2"}
+
+4. POST /rpc/post_ownership      {p_document_id: "D1"}
+   → {"ok": true, "owners_posted": 2}
+
+5. GET /plot_summary ← owner_name: "Иванов Иван, Петров Пётр"
 ```
 
-Отмена проведения владения с каскадом по времени: **`POST /rpc/unpost_ownership`** (см. описание RPC; движения по счетам не сторнируются).
+Отмена: `POST /rpc/unpost_ownership {"p_document_id": "D1"}` — каскад по времени, движения не сторнируются.
 
 ---
 
