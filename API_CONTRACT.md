@@ -174,6 +174,10 @@ Authorization: Bearer <superadmin_token>
 | `MISSING_OBJECT` | У документа не заполнен `object_id` (шапка не содержит объекта) |
 | `EMPTY_TYPES` | Передан пустой или NULL массив типов счётчиков в `set_meter_types` |
 | `INVALID_METER_TYPE` | Недопустимый тип счётчика (допустимо: water, electricity, gas) |
+| `UNKNOWN_SETTING` | Имя настройки не найдено в `org_setting_definitions` или настройка деактивирована |
+| `INVALID_SETTING_VALUE` | Тип значения не соответствует `value_type` настройки |
+| `INVALID_ENUM_VALUE` | Значение не входит в `allowed_values` настройки |
+| `METER_TYPES_REQUIRED` | `use_meters=true` при пустом `enabled_meter_types` |
 | `METER_NOT_FOUND` | Счётчик с таким ID не найден в организации |
 | `METER_CHARGE_DETAIL_MISSING` | Нет строки `doc_meter_charge` для этого документа |
 | `CHARGE_LINE_NOT_FOUND` | Нет строки `doc_meter_charge` для документа |
@@ -981,10 +985,10 @@ Authorization: Bearer <token>
 ## Настройки организации
 
 Учётная политика — параметры ведения учёта для каждой организации.  
-Хранятся в `private.org_settings` (lock_date, current_period) и `private.org_settings_history` (типы счётчиков и будущие настройки с историей).
+Хранятся в `private.org_settings_history` (история по датам) и `private.org_setting_definitions` (реестр допустимых настроек, migration 022).
 
 ### GET /org_settings
-Текущие настройки организации.
+Текущие настройки организации. Возвращает по одной строке на каждую активную настройку.
 
 ```
 GET /pg/org_settings?organization_id=eq.<uuid>
@@ -993,24 +997,84 @@ Authorization: Bearer <token>
 
 **Response:**
 ```json
-[{
-  "organization_id": "uuid",
-  "lock_date": "2025-12-31",
-  "current_period": "2026-01-01",
-  "enabled_meter_types": ["water", "electricity", "gas"]
-}]
+[
+  {
+    "organization_id": "uuid",
+    "setting_name":    "use_meters",
+    "value_type":      "boolean",
+    "description":     "Использовать счётчики",
+    "allowed_values":  null,
+    "default_value":   false,
+    "current_value":   false
+  },
+  {
+    "organization_id": "uuid",
+    "setting_name":    "enabled_meter_types",
+    "value_type":      "enum[]",
+    "description":     "Виды счётчиков",
+    "allowed_values":  ["water", "electricity", "gas"],
+    "default_value":   [],
+    "current_value":   ["water"]
+  },
+  {
+    "organization_id": "uuid",
+    "setting_name":    "legal_address",
+    "value_type":      "text",
+    "description":     "Юридический адрес",
+    "allowed_values":  null,
+    "default_value":   null,
+    "current_value":   "ул. Ленина, 1"
+  },
+  {
+    "organization_id": "uuid",
+    "setting_name":    "postal_address",
+    "value_type":      "text",
+    "description":     "Почтовый адрес",
+    "allowed_values":  null,
+    "default_value":   null,
+    "current_value":   null
+  }
+]
 ```
 
-| Поле | Описание | Null? |
-|------|----------|-------|
-| `lock_date` | Дата запрета изменений — документы с `doc_date <= lock_date` нельзя провести | да |
-| `current_period` | Рабочий период (UI-ориентир, не блокирует) | да |
-| `enabled_meter_types` | Типы счётчиков, активных в учёте | нет (дефолт `["water","electricity","gas"]`) |
+| Поле | Описание |
+|------|----------|
+| `setting_name` | Имя настройки — ключ |
+| `value_type` | Тип значения: `boolean`, `integer`, `text`, `enum`, `enum[]` |
+| `description` | Человекочитаемое описание |
+| `allowed_values` | JSON-массив допустимых значений (для `enum`/`enum[]`), иначе null |
+| `default_value` | Значение по умолчанию (JSONB) |
+| `current_value` | Актуальное значение: из `org_settings_history` или `default_value` если не установлено |
 
-Допустимые значения `enabled_meter_types`: `water`, `electricity`, `gas`.
+> **Migration note:** до migration 022 view возвращал одну строку с колонками `lock_date`, `current_period`, `enabled_meter_types`. Схема изменена.
+
+### POST /rpc/set_org_setting
+Установить значение любой настройки организации.
+
+```
+POST /pg/rpc/set_org_setting
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_setting_name": "legal_address", "p_value": "ул. Ленина, 1" }
+```
+
+`p_value` передаётся как JSONB: строки в кавычках (`"text"`), числа без (`42`), булевы (`true`/`false`), массивы (`["water","gas"]`).
+
+**Response:** `{"ok": true}`
+
+**Ошибки:**
+- `UNKNOWN_SETTING: <name>` — имя не найдено в реестре или настройка деактивирована
+- `INVALID_SETTING_VALUE: expected <type>` — тип значения не совпадает
+- `INVALID_ENUM_VALUE: <value> not in allowed values` — значение вне допустимых
+- `METER_TYPES_REQUIRED` — попытка установить `use_meters=true` при пустом `enabled_meter_types`
+- `ORG_MISMATCH` — чужая организация
 
 ### POST /rpc/set_meter_types
-Установить активные типы счётчиков для организации.
+Установить активные типы счётчиков. Враппер поверх `set_org_setting` для обратной совместимости.
 
 ```
 POST /pg/rpc/set_meter_types
@@ -1025,9 +1089,9 @@ Content-Type: application/json
 
 **Response:** `{"ok": true}`
 
-**Ошибки:** `EMPTY_TYPES`, `INVALID_METER_TYPE: <значение>`, `ORG_MISMATCH`.
+**Ошибки:** `EMPTY_TYPES`, `INVALID_ENUM_VALUE: <значение>`, `ORG_MISMATCH`.
 
-Изменение сохраняется в историю с датой `CURRENT_DATE`. Дефолт (все три типа) применяется до первого вызова.
+Изменение сохраняется в историю с датой `CURRENT_DATE`.
 
 ### POST /rpc/set_lock_date
 Установить дату запрета изменений.
