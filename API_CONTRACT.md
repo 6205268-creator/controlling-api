@@ -185,6 +185,8 @@ Authorization: Bearer <superadmin_token>
 | `NO_PREVIOUS_READING` | В регистре менее двух показаний — невозможно рассчитать потребление |
 | `NO_TARIFF_FOR_DATE` | Нет тарифа для данного вида взноса на указанную дату |
 | `NOT_METER_KIND` | Тарифы можно устанавливать только для видов взноса с `kind='meter'` |
+| `EMPTY_CONTRACTORS` | Передан пустой или NULL массив `p_contractor_ids` в `set_org_officer` |
+| `INVALID_OFFICER_TYPE` | Недопустимый тип должностного лица (допустимо: chairman, treasurer, audit_member) |
 
 ---
 
@@ -1125,6 +1127,74 @@ Content-Type: application/json
 ```
 
 **Response:** `{"ok": true}`
+
+---
+
+## Должностные лица организации
+
+Хранятся в `private.org_officers`. Без даты окончания полномочий — текущий определяется как запись с максимальным `effective_from ≤ запрашиваемая_дата`.
+
+### GET /org_officers
+Текущий состав должностных лиц организации.
+
+```
+GET /pg/org_officers?organization_id=eq.<uuid>
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+[
+  { "organization_id": "uuid", "officer_type": "chairman",     "contractor_id": "uuid", "effective_from": "2024-01-01" },
+  { "organization_id": "uuid", "officer_type": "treasurer",    "contractor_id": "uuid", "effective_from": "2024-01-01" },
+  { "organization_id": "uuid", "officer_type": "audit_member", "contractor_id": "uuid", "effective_from": "2024-01-01" },
+  { "organization_id": "uuid", "officer_type": "audit_member", "contractor_id": "uuid", "effective_from": "2024-01-01" }
+]
+```
+
+Роли, по которым никто не назначен, в ответе отсутствуют.
+
+| `officer_type` | Количество | Ограничения на назначение |
+|----------------|-----------|--------------------------|
+| `chairman` | 1 | нет (может быть наёмным лицом) |
+| `treasurer` | 1 | нет |
+| `audit_member` | N | TODO: должен быть членом организации (TD-002) |
+
+### POST /rpc/set_org_officer
+Назначить должностных лиц. Для ревкомиссии передать всех членов одновременно — они запишутся одной датой.
+
+```
+POST /pg/rpc/set_org_officer
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_officer_type": "chairman", "p_contractor_ids": ["uuid"], "p_effective_from": "2024-01-01" }
+```
+
+**Response:** `{"ok": true}`
+
+**Ошибки:** `ORG_MISMATCH`, `EMPTY_CONTRACTORS`, `INVALID_OFFICER_TYPE`.
+
+### POST /rpc/get_officers_at
+Состав должностных лиц на произвольную дату. Используется в отчётах.
+
+```
+POST /pg/rpc/get_officers_at
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request:**
+```json
+{ "p_org_id": "uuid", "p_date": "2025-06-15" }
+```
+
+**Response:** массив `(officer_type, contractor_id, effective_from)` — те же поля, что и в `/org_officers`.
+
+**Ошибки:** `ORG_MISMATCH`.
 
 ---
 
